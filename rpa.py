@@ -9,7 +9,7 @@ import re
 
 def run_rpa(keep_open=True):
     # 已登录的Chrome用户配置文件路径
-    user_data_dir = r"C:\Users\U191115\AppData\Local\Google\Chrome\User Data"
+    user_data_dir = r"C:\Users\34897\AppData\Local\Google\Chrome\User Data"
     
     # 确保目标目录存在
     screenshot_dir = "screenshots"
@@ -40,6 +40,10 @@ def run_rpa(keep_open=True):
     # 自定义截图命名
     first_screenshot_path = os.path.join(screenshot_dir, f"gsc-{page_name}-chart1.png")
     second_screenshot_path = os.path.join(screenshot_dir, f"gsc-{page_name}-chart2.png")
+    ga_screenshot_path = os.path.join(screenshot_dir, f"ga-{page_name}.png")
+    
+    # 构建GA4链接
+    ga4_url = f"https://analytics.google.com/analytics/web/?authuser=0#/p309178187/reports/explorer?params=_u..nav%3Dmaui%26_r.explorerCard..startRow%3D0%26_r.explorerCard..filterTerm%3D{page_name}%26_u.dateOption%3Dlast90Days%26_u.comparisonOption%3Ddisabled%26_r.explorerCard..columnFilters%3D%7B%22conversionEvent%22:%22wclick_download%22%7D&r=5958195737&ruid=landing-page,life-cycle,engagement&collectionId=5958209258"
     
     # 全局变量用于保持浏览器引用
     global browser_instance
@@ -225,8 +229,8 @@ def run_rpa(keep_open=True):
             print("等待内容完全加载...")
             time.sleep(random.uniform(5, 8))
             
-            # 尝试定位目标元素
-            selector = "#data-container > div > div.VfPpkd-WsjYwc.VfPpkd-WsjYwc-OWXEXe-INsAgc.KC1dQ.Usd1Ac.AaN0Dd.YJ1SEc.pTyMIf > c-wiz"
+            # 尝试定位目标元素 - 使用更新的选择器
+            selector = "#yDmH0d > c-wiz.zQTmif.SSPGKf.eejsDc > c-wiz > div > div.OoO4Vb > div > div > div.VfPpkd-WsjYwc.VfPpkd-WsjYwc-OWXEXe-INsAgc.KC1dQ.Usd1Ac.AaN0Dd.YJ1SEc.pTyMIf > c-wiz"
             
             try:
                 print("定位第一个目标元素...")
@@ -242,36 +246,10 @@ def run_rpa(keep_open=True):
                     
             except Exception as e:
                 print(f"定位元素时出错: {str(e)}")
-                print("尝试查找其他可能的选择器...")
-                
-                # 尝试其他可能的选择器
-                alternative_selectors = [
-                    "c-wiz[data-node-index]",
-                    ".KC1dQ",
-                    "#data-container div[jscontroller]",
-                    "#analytics-table"
-                ]
-                
-                element_found = False
-                for alt_selector in alternative_selectors:
-                    try:
-                        print(f"尝试选择器: {alt_selector}")
-                        element = page.wait_for_selector(alt_selector, timeout=10000)
-                        if element:
-                            print(f"使用备选选择器 {alt_selector} 找到元素")
-                            element.screenshot(path=first_screenshot_path)
-                            print(f"第一个截图已保存为: {first_screenshot_path}")
-                            element_found = True
-                            break
-                    except:
-                        continue
-                
-                if not element_found:
-                    # 如果所有选择器都失败，则截取整个页面
-                    print("未能找到任何目标元素，截取整个页面...")
-                    full_page_path = os.path.join(screenshot_dir, f"gsc-{page_name}-chart1-full.png")
-                    page.screenshot(path=full_page_path, full_page=True)
-                    print(f"整页截图已保存为: {full_page_path}")
+                print("尝试全页截图作为备选...")
+                full_page_path = os.path.join(screenshot_dir, f"gsc-{page_name}-chart1-full.png")
+                page.screenshot(path=full_page_path, full_page=True)
+                print(f"整页截图已保存为: {full_page_path}")
             
             # 新增操作：点击指定元素并截取第二个元素
             try:
@@ -292,8 +270,8 @@ def run_rpa(keep_open=True):
                 # 等待点击后的页面变化
                 time.sleep(random.uniform(1, 2))
                 
-                # 截取第二个指定元素
-                second_selector = "#data-container > div > div:nth-child(2) > div"
+                # 截取第二个指定元素 - 使用更新的选择器
+                second_selector = "#yDmH0d > c-wiz.zQTmif.SSPGKf.eejsDc > c-wiz > div > div.OoO4Vb > div > div > div:nth-child(2) > div"
                 
                 print(f"定位第二个目标元素: {second_selector}")
                 second_element = page.wait_for_selector(second_selector, timeout=30000)
@@ -398,10 +376,13 @@ def run_rpa(keep_open=True):
                 next_section_index = md_content.find("###", gsc_section_index + 1)
                 
                 if gsc_section_index != -1:
-                    # 构建新内容，加上"- "前缀和序号
+                    # 构建新内容，只在第一行加上"- "前缀
                     new_content = ""
                     for i, query in enumerate(gsc_queries):
-                        new_content += f"- {i+1}. {query}\n"
+                        if i == 0:
+                            new_content += f"- {i+1}.{query}\n"
+                        else:
+                            new_content += f"{i+1}.{query}\n"
                     
                     # 插入新内容
                     if next_section_index != -1:
@@ -419,6 +400,48 @@ def run_rpa(keep_open=True):
                 
             except Exception as extract_error:
                 print(f"提取查询时出错: {str(extract_error)}")
+            
+            # 导航到GA4页面并截图
+            try:
+                print(f"导航到GA4分析页面: {ga4_url}")
+                page.goto(ga4_url, timeout=60000)  # 增加导航超时时间到60秒
+                
+                # 使用固定延迟来确保页面渲染，不需要等待networkidle
+                print("等待页面渲染 (20秒)...")
+                time.sleep(5)  # 固定等待20秒，给GA4足够的加载时间
+                
+                # 添加随机滚动，更像人类行为
+                for _ in range(random.randint(2, 4)):
+                    page.mouse.wheel(0, random.randint(100, 300))
+                    time.sleep(random.uniform(0.5, 1.5))
+                
+                # 定位GA4报表元素 - 使用已知有效的选择器
+                ga_selector = "body > ga-hybrid-app-root > ui-view-wrapper > div > app-root > div > div > ui-view-wrapper > div > ga-report-container > div > div > div > report-view > ui-view-wrapper > div > ui-view > ga-explorer-report > div > div > div > ga-card-list.explorer-card-list.ga-card-list.ng-star-inserted > div"
+                
+                print(f"定位GA4报表元素...")
+                
+                # 直接查询元素是否存在，不使用等待
+                ga_element = page.query_selector(ga_selector)
+                
+                if ga_element:
+                    print("找到GA4元素，正在截图...")
+                    ga_element.screenshot(path=ga_screenshot_path)
+                    print(f"GA4截图已保存为: {ga_screenshot_path}")
+                else:
+                    print("未找到特定GA4元素，截取整个页面...")
+                    ga_full_path = os.path.join(screenshot_dir, f"ga-{page_name}-full.png")
+                    page.screenshot(path=ga_full_path, full_page=True)
+                    print(f"GA4整页截图已保存为: {ga_full_path}")
+                
+            except Exception as ga_error:
+                print(f"GA4截图过程中发生错误: {str(ga_error)}")
+                try:
+                    # 截取当前页面作为错误记录
+                    ga_error_path = os.path.join(screenshot_dir, f"ga-{page_name}-error.png")
+                    page.screenshot(path=ga_error_path)
+                    print(f"错误状态截图已保存为: {ga_error_path}")
+                except:
+                    print("无法保存GA4错误截图")
             
             # 保存cookies以供将来使用（如果需要）
             cookies = browser.cookies()
@@ -448,7 +471,7 @@ def run_rpa(keep_open=True):
                 # 如果不需要保持打开，则关闭浏览器
                 browser.close()
             
-            return first_screenshot_path, second_screenshot_path
+            return first_screenshot_path, second_screenshot_path, ga_screenshot_path
             
         except Exception as e:
             print(f"发生错误: {str(e)}")

@@ -8,16 +8,16 @@
 
 ### GSC热门查询
 
-- 1. spotify unblocked
-- 2. unblocked spotify
-- 3. spotify web player unblocked
-- 4. spotify unblocked for school
-- 5. spotify unblocked website
-- 6. unblocked spotify for school
-- 7. spotify unbloked
-- 8. spotify un blocked
-- 9. spotify free music unblocked
-- 10. spotify unblocked school
+- 1.spotify unblocked
+2.unblocked spotify
+3.spotify web player unblocked
+4.spotify unblocked for school
+5.spotify unblocked website
+6.unblocked spotify for school
+7.spotify unbloked
+8.spotify free music unblocked
+9.spotify un blocked
+10.spotify unblocked school
 
 ### 相关问题
 
