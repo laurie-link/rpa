@@ -175,7 +175,7 @@ class RPAWorker(QThread):
         self.log_message.emit("启动浏览器...")
         
         # 获取用户数据目录
-        user_data_dir = self.settings.value("chrome_profile", r"C:\Users\34897\AppData\Local\Google\Chrome\User Data")
+        user_data_dir = self.settings.value("chrome_profile", r"C:\Users\U191115\AppData\Local\Google\Chrome\User Data")
         
         # 随机选择用户代理
         user_agents = [
@@ -529,6 +529,10 @@ class RPAWorker(QThread):
         try:
             self.log_message.emit(f"导航到GA4分析页面: {ga_url}")
             page.goto(ga_url, timeout=90000)
+            
+            # 添加5秒等待时间让页面完全加载
+            self.log_message.emit("等待5秒让页面完全加载...")
+            time.sleep(5)
             
             # 直接尝试定位GA4报表元素
             ga_selector = "body > ga-hybrid-app-root > ui-view-wrapper > div > app-root > div > div > ui-view-wrapper > div > ga-report-container > div > div > div > report-view > ui-view-wrapper > div > ui-view > ga-explorer-report > div > div > div > ga-card-list.explorer-card-list.ga-card-list.ng-star-inserted > div"
