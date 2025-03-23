@@ -112,6 +112,11 @@ class RPAWorker(QThread):
                 if self.settings.value("scrape_ga", "true") == "true":
                     self.process_ga(page, ga_url, page_name, ga_screenshot_path, screenshot_dir)
                 
+                # 处理Google搜索（新功能）
+                search_query = page_name.replace("-", " ")
+                self.log_message.emit(f"开始处理Google搜索数据，搜索查询: {search_query}")
+                self.process_google_search(page, search_query, page_name, screenshot_dir)
+                
                 # 关闭浏览器
                 browser.close()
                 
@@ -175,7 +180,7 @@ class RPAWorker(QThread):
         self.log_message.emit("启动浏览器...")
         
         # 获取用户数据目录
-        user_data_dir = self.settings.value("chrome_profile", r"C:\Users\U191115\AppData\Local\Google\Chrome\User Data")
+        user_data_dir = self.settings.value("chrome_profile", r"C:\Users\34897\AppData\Local\Google\Chrome\User Data")
         
         # 随机选择用户代理
         user_agents = [
@@ -452,15 +457,15 @@ class RPAWorker(QThread):
                 self.log_message.emit(f"使用JavaScript评估提取到 {len(gsc_queries)} 个查询")
             
             # 更新markdown文件
-            self.update_markdown_file(page_name, gsc_queries)
+            self.update_markdown_file(page_name, gsc_queries, "GSC热门查询")
             
         except Exception as extract_error:
             self.log_message.emit(f"提取查询时出错: {str(extract_error)}")
     
-    def update_markdown_file(self, page_name, gsc_queries):
-        """更新或创建MD文件并填入GSC查询结果"""
-        if not gsc_queries:
-            self.log_message.emit("没有查询结果可以更新到MD文件")
+    def update_markdown_file(self, page_name, items, section_name):
+        """更新或创建MD文件并填入提取的内容"""
+        if not items:
+            self.log_message.emit(f"没有{section_name}结果可以更新到MD文件")
             return
             
         # 创建目标MD文件名
@@ -497,32 +502,33 @@ class RPAWorker(QThread):
             self.log_message.emit(f"读取MD文件时出错: {str(e)}")
             return
         
-        # 查找"### GSC热门查询"部分
-        gsc_section_index = md_content.find("### GSC热门查询")
-        next_section_index = md_content.find("###", gsc_section_index + 1)
+        # 查找对应部分
+        section_header = f"### {section_name}"
+        section_index = md_content.find(section_header)
+        next_section_index = md_content.find("###", section_index + 1)
         
-        if gsc_section_index != -1:
+        if section_index != -1:
             # 构建新内容
             new_content = ""
-            for i, query in enumerate(gsc_queries):
+            for i, item in enumerate(items):
                 if i == 0:
-                    new_content += f"- {i+1}.{query}\n"
+                    new_content += f"- {i+1}.{item}\n"
                 else:
-                    new_content += f"{i+1}.{query}\n"
+                    new_content += f"{i+1}.{item}\n"
             
             # 插入新内容
             if next_section_index != -1:
-                updated_content = md_content[:gsc_section_index + len("### GSC热门查询")] + "\n\n" + new_content + "\n" + md_content[next_section_index:]
+                updated_content = md_content[:section_index + len(section_header)] + "\n\n" + new_content + "\n" + md_content[next_section_index:]
             else:
-                updated_content = md_content[:gsc_section_index + len("### GSC热门查询")] + "\n\n" + new_content
+                updated_content = md_content[:section_index + len(section_header)] + "\n\n" + new_content
             
             # 保存更新后的内容
             with open(md_file_path, "w", encoding="utf-8") as file:
                 file.write(updated_content)
             
-            self.log_message.emit(f"成功将前 {len(gsc_queries)} 个GSC查询保存到 {md_file_path}")
+            self.log_message.emit(f"成功将 {len(items)} 个{section_name}结果保存到 {md_file_path}")
         else:
-            self.log_message.emit(f"在文件 {md_file_path} 中未找到'### GSC热门查询'部分")
+            self.log_message.emit(f"在文件 {md_file_path} 中未找到'{section_header}'部分")
     
     def process_ga(self, page, ga_url, page_name, ga_screenshot_path, screenshot_dir):
         """处理GA相关的任务"""
@@ -571,6 +577,445 @@ class RPAWorker(QThread):
                 self.log_message.emit(f"错误状态截图已保存为: {ga_error_path}")
             except:
                 self.log_message.emit("无法保存GA4错误截图")
+    
+    def process_google_search(self, page, search_query, page_name, screenshot_dir):
+        """处理Google搜索下拉框、PAA和相关搜索"""
+        try:
+            # 导航到Google搜索
+            self.log_message.emit(f"导航到Google搜索页面...")
+            page.goto("https://www.google.com/", timeout=30000)
+            
+            # 检查并处理同意条款页面
+            self.handle_consent_page(page)
+            
+            # 等待搜索框加载
+            search_selector = "textarea[name='q']"
+            self.log_message.emit("等待搜索框加载...")
+            page.wait_for_selector(search_selector, state="visible", timeout=30000)
+            
+            # 输入搜索词
+            self.log_message.emit(f"输入搜索词: {search_query}")
+            page.fill(search_selector, search_query)
+            
+            # 等待搜索下拉框加载 - 增加等待时间
+            self.log_message.emit("等待搜索下拉框加载...")
+            time.sleep(3)  # 给下拉框更多时间加载
+            
+            # 获取搜索下拉框内容
+            dropdown_suggestions = self.extract_dropdown_suggestions(page)
+            if dropdown_suggestions:
+                self.log_message.emit(f"提取到 {len(dropdown_suggestions)} 个搜索下拉框建议")
+                for i, suggestion in enumerate(dropdown_suggestions):
+                    self.log_message.emit(f"建议 {i+1}: {suggestion}")
+                self.update_markdown_file(page_name, dropdown_suggestions, "Google 搜索下拉框")
+            else:
+                self.log_message.emit("未能提取到搜索下拉框建议")
+                
+            # 提交搜索
+            self.log_message.emit("提交搜索...")
+            page.press(search_selector, "Enter")
+            page.wait_for_load_state("networkidle", timeout=30000)
+            self.log_message.emit("搜索结果页面已加载")
+            
+            # 提取PAA问题
+            self.log_message.emit("开始提取PAA问题...")
+            paa_questions = self.extract_paa_questions(page)
+            if paa_questions:
+                self.log_message.emit(f"提取到 {len(paa_questions)} 个PAA问题")
+                for i, question in enumerate(paa_questions):
+                    self.log_message.emit(f"问题 {i+1}: {question}")
+                self.update_markdown_file(page_name, paa_questions, "相关问题")
+            else:
+                self.log_message.emit("未能提取到PAA问题")
+            
+            # 提取相关搜索前更充分地滚动页面
+            self.log_message.emit("滚动到页面底部以加载相关搜索...")
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            time.sleep(2)  # 给页面更多时间加载底部内容
+            
+            # 提取相关搜索
+            self.log_message.emit("开始提取相关搜索...")
+            related_searches = self.extract_related_searches(page)
+            if related_searches:
+                self.log_message.emit(f"提取到 {len(related_searches)} 个相关搜索")
+                for i, search in enumerate(related_searches):
+                    self.log_message.emit(f"相关搜索 {i+1}: {search}")
+                self.update_markdown_file(page_name, related_searches, "相关搜索")
+            else:
+                self.log_message.emit("未能提取到相关搜索")
+                
+        except Exception as google_error:
+            self.log_message.emit(f"Google搜索过程中发生错误: {str(google_error)}")
+            self.log_message.emit(f"错误详情: {google_error}")  # 记录更详细的错误信息
+    
+    def handle_consent_page(self, page):
+        """处理Google同意条款页面"""
+        try:
+            # 检查是否在同意条款页面
+            if "consent.google.com" in page.url:
+                self.log_message.emit("检测到Google同意条款页面，尝试点击同意按钮...")
+                
+                # 尝试点击"我同意"按钮（不同地区可能有不同ID）
+                consent_buttons = [
+                    "button#L2AGLb",  # 常见的"我同意"按钮ID
+                    "button[aria-label='同意使用 Cookie']",
+                    "button[jsname='higCR']",  # 另一种可能的ID
+                    "form:nth-child(2) button"  # 基于位置的选择器
+                ]
+                
+                for button_selector in consent_buttons:
+                    try:
+                        if page.query_selector(button_selector):
+                            page.click(button_selector)
+                            self.log_message.emit(f"已点击同意按钮: {button_selector}")
+                            # 等待页面导航完成
+                            page.wait_for_navigation(timeout=10000)
+                            break
+                    except Exception as click_error:
+                        self.log_message.emit(f"点击按钮 {button_selector} 时出错: {str(click_error)}")
+                
+                # 确认是否已离开同意页面
+                if "consent.google.com" not in page.url:
+                    self.log_message.emit("已成功处理同意条款页面")
+                else:
+                    self.log_message.emit("未能自动处理同意条款页面，请在浏览器中手动操作...")
+                    # 等待用户手动操作
+                    page.wait_for_url(lambda url: "consent.google.com" not in url, timeout=60000)
+                    self.log_message.emit("检测到已离开同意条款页面")
+        except Exception as consent_error:
+            self.log_message.emit(f"处理同意条款页面时出错: {str(consent_error)}")
+    
+    def extract_dropdown_suggestions(self, page):
+        """提取Google搜索下拉框建议"""
+        try:
+            # 等待下拉框出现 - 使用一个通用的选择器确保下拉框已加载
+            dropdown_container_selector = "div[jsname='aajZCb']"
+            page.wait_for_selector(dropdown_container_selector, state="visible", timeout=5000)
+            
+            # 使用更直接的方法提取搜索建议
+            suggestions = page.evaluate("""
+                () => {
+                    // 尝试确定当前Google界面下的下拉框结构
+                    function getAllSuggestions() {
+                        // 不同的可能选择器组合
+                        const possibleSelectors = [
+                            // 针对当前截图所示结构
+                            ".wM6W7d",
+                            ".OBMEnb .wM6W7d",
+                            "ul[role='listbox'] li",
+                            "div[jsname='aajZCb'] .wM6W7d",
+                            // 针对老结构
+                            ".sbct",
+                            ".sbsb_a li",
+                            ".sbpqs_a li",
+                            ".G43f7e li"
+                        ];
+                        
+                        let elements = [];
+                        // 尝试所有可能的选择器
+                        for (const selector of possibleSelectors) {
+                            const found = document.querySelectorAll(selector);
+                            if (found && found.length > 0) {
+                                elements = Array.from(found);
+                                console.log(`找到选择器 ${selector} 匹配的元素: ${found.length} 个`);
+                                break;
+                            }
+                        }
+                        
+                        // 如果没有找到任何元素，返回空数组
+                        if (elements.length === 0) {
+                            console.log("未找到任何匹配的下拉框元素");
+                            return [];
+                        }
+                        
+                        // 处理找到的元素，提取文本
+                        return elements.map(el => {
+                            // 获取纯文本内容
+                            return el.textContent.trim();
+                        }).filter(text => text.length > 0); // 过滤掉空文本
+                    }
+                    
+                    // 调用方法获取所有建议
+                    const results = getAllSuggestions();
+                    console.log(`找到 ${results.length} 个下拉框建议`);
+                    console.log("建议内容:", results);
+                    
+                    return results;
+                }
+            """)
+            
+            self.log_message.emit(f"找到 {len(suggestions)} 个搜索下拉框建议")
+            
+            if len(suggestions) == 0:
+                # 如果无法提取到建议，尝试使用最后的备选方法
+                self.log_message.emit("尝试使用备选方法从页面源码提取下拉建议...")
+                
+                # 将页面源码保存到文件以便分析
+                page_content = page.content()
+                debug_dir = os.path.join(self.settings.value("screenshot_dir", "screenshots"), "debug")
+                if not os.path.exists(debug_dir):
+                    os.makedirs(debug_dir)
+                with open(os.path.join(debug_dir, "page_source.html"), "w", encoding="utf-8") as f:
+                    f.write(page_content)
+                
+                # 使用正则表达式从页面源码中提取可能的搜索建议
+                import re
+                search_query = page.input_value("textarea[name='q']")
+                self.log_message.emit(f"当前搜索词: {search_query}")
+                
+                # 尝试匹配基于当前搜索词的建议
+                pattern = re.compile(f'({re.escape(search_query)}[^<>"]*)', re.IGNORECASE)
+                matches = pattern.findall(page_content)
+                
+                if matches:
+                    # 仅选择有意义的匹配项（长度合适且不包含HTML标签）
+                    valid_matches = [m for m in matches if 
+                                    len(m) > len(search_query) and 
+                                    len(m) < 100 and 
+                                    '<' not in m and 
+                                    '>' not in m]
+                    
+                    # 去重
+                    unique_matches = list(set(valid_matches))
+                    
+                    self.log_message.emit(f"通过页面源码找到 {len(unique_matches)} 个可能的搜索建议")
+                    return unique_matches
+            
+            return suggestions
+            
+        except Exception as dropdown_error:
+            self.log_message.emit(f"提取搜索下拉框建议时出错: {str(dropdown_error)}")
+            # 记录更多调试信息
+            self.log_message.emit(f"错误详情: {dropdown_error}")
+            return []
+    
+    def extract_paa_questions(self, page):
+        """提取PAA（People Also Ask）问题"""
+        try:
+            # 确保页面有足够时间加载PAA部分
+            time.sleep(1)
+            
+            # 使用更全面的JavaScript方法提取PAA问题
+            self.log_message.emit("使用JavaScript方法提取PAA问题...")
+            questions = page.evaluate("""
+                () => {
+                    // 辅助函数：获取元素的可见文本，忽略隐藏元素
+                    function getVisibleText(element) {
+                        if (!element) return '';
+                        
+                        const style = window.getComputedStyle(element);
+                        if (style.display === 'none' || style.visibility === 'hidden') return '';
+                        
+                        let text = '';
+                        for (const child of element.childNodes) {
+                            if (child.nodeType === Node.TEXT_NODE) {
+                                text += child.textContent.trim() + ' ';
+                            } else if (child.nodeType === Node.ELEMENT_NODE) {
+                                text += getVisibleText(child) + ' ';
+                            }
+                        }
+                        return text.trim();
+                    }
+                    
+                    // 尝试不同的选择器来找到PAA问题
+                    const questions = new Set(); // 使用Set去重
+                    
+                    // 最新的选择器列表，按可能性排序
+                    const selectors = [
+                        // 常见的PAA容器选择器
+                        "div.related-question-pair",
+                        ".g .related-question-pair",
+                        ".related-questions-pair",
+                        "div[jsname='N760b']",
+                        
+                        // 直接选择问题文本元素
+                        ".related-question-pair .JlqpRe",
+                        ".related-question-pair .wQiwMc .JlqpRe",
+                        "div[jsname='Cpkphb'] .JlqpRe",
+                        "div[jsname='N760b'] .wQiwMc .JlqpRe",
+                        "div[data-ved] .CSkcDe",
+                        
+                        // 额外尝试其他可能的问题选择器
+                        ".e24Kjd",
+                        ".iDjcJe",
+                        "[role='heading']"
+                    ];
+                    
+                    // 对于每个选择器，尝试提取问题
+                    for (const selector of selectors) {
+                        const elements = document.querySelectorAll(selector);
+                        if (elements && elements.length > 0) {
+                            for (const element of elements) {
+                                // 依赖于结构的选择器
+                                let questionText = '';
+                                
+                                // 尝试寻找专门的问题容器
+                                const questionContainer = element.querySelector('.JlqpRe, .CSkcDe, [role="heading"], .wWOJcd, .e24Kjd, .iDjcJe');
+                                
+                                if (questionContainer) {
+                                    questionText = getVisibleText(questionContainer);
+                                } else {
+                                    // 如果没有找到专门的容器，尝试获取元素本身的文本
+                                    questionText = getVisibleText(element);
+                                }
+                                
+                                                                    // 验证并添加问题
+                                if (questionText && questionText.length > 10 && questionText.length < 200) {
+                                    // 仅添加符合问题长度的合理文本（避免过短或过长）
+                                    // 并过滤掉明显不是问题的文本
+                                    questions.add(questionText);
+                                }
+                            }
+                        }
+                        
+                        // 如果我们找到了问题，就不需要继续尝试
+                        if (questions.size > 0) {
+                            break;
+                        }
+                    }
+                    
+                    // 如果上面的方法都失败了，尝试最后的备选方法：
+                    // 搜索页面中看起来像问题的标题元素
+                    if (questions.size === 0) {
+                        const headings = document.querySelectorAll('h3, h4, [role="heading"]');
+                        for (const heading of headings) {
+                            const text = getVisibleText(heading);
+                            // 检查文本是否看起来像问题（含有问号或问题词）
+                            if (text && (
+                                text.includes('?') || 
+                                text.includes('how') || 
+                                text.includes('what') || 
+                                text.includes('why') || 
+                                text.includes('when') || 
+                                text.includes('where') ||
+                                text.includes('which') ||
+                                text.includes('who') ||
+                                text.includes('can') ||
+                                text.includes('do')
+                            ) && text.length > 15 && text.length < 200) {
+                                questions.add(text);
+                            }
+                        }
+                    }
+                    
+                    return Array.from(questions);
+                }
+            """)
+            
+            self.log_message.emit(f"通过JavaScript评估找到 {len(questions)} 个PAA问题")
+            return questions
+            
+        except Exception as paa_error:
+            self.log_message.emit(f"提取PAA问题时出错: {str(paa_error)}")
+            self.log_message.emit(f"详细错误: {paa_error}")
+            return []
+    
+    def extract_related_searches(self, page):
+        """提取相关搜索"""
+        try:
+            # 相关搜索部分通常位于页面底部
+            # 先滚动到页面底部
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            time.sleep(2)  # 增加等待时间确保内容完全加载
+            
+            # 使用您提供的最新选择器
+            new_selector = "#bres > div.ULSxyf > div > div > div > div.y6Uyqe > div > div:nth-child(1) > div:nth-child(4) > div > div > a > div > div.wyccme > div > div > div > span"
+            
+            # 尝试获取相关搜索
+            self.log_message.emit(f"尝试使用新选择器获取相关搜索...")
+            
+            # 定位相关搜索部分的所有链接
+            # 使用更通用的选择器组合
+            searches = []
+            
+            # 使用JavaScript评估提取相关搜索，处理各种可能的HTML结构
+            searches = page.evaluate("""
+                () => {
+                    const searches = [];
+                    
+                    // 尝试获取相关搜索
+                    function getSearchesFromElements(elements) {
+                        const results = [];
+                        for (const element of elements) {
+                            const textContent = element.textContent.trim();
+                            if (textContent && !textContent.match(/^(全部|视频|短视频|图片|购物|新闻|网页|图书|地图|航班)$/)) {
+                                results.push(textContent);
+                            }
+                        }
+                        return results;
+                    }
+                    
+                    // 尝试不同的选择器组合
+                    const selectorCombinations = [
+                        // 您提供的新选择器
+                        "#bres > div.ULSxyf > div > div > div > div.y6Uyqe > div > div > div > div > div > a > div > div.wyccme > div > div > div > span",
+                        
+                        // 更简化的选择器，捕获相关搜索文本区域
+                        "div.y6Uyqe a div.wyccme span",
+                        "div.y6Uyqe a div.dXS2h span",
+                        
+                        // 使用文本容器类
+                        "div.y6Uyqe a div.mtv5bd span.dg6jd",
+                        
+                        // 使用父容器定位相关搜索部分
+                        "#botstuff div.card-section a",
+                        "div.brs_col a span",
+                        
+                        // 尝试完全不同的方法 - 寻找页面底部带有标题的部分
+                        "div[data-hveid] a" // 通用相关内容选择器
+                    ];
+                    
+                    for (const selector of selectorCombinations) {
+                        const elements = document.querySelectorAll(selector);
+                        if (elements.length > 0) {
+                            const results = getSearchesFromElements(elements);
+                            if (results.length > 0) {
+                                searches.push(...results);
+                                break; // 如果我们找到了相关搜索，就停止尝试其他选择器
+                            }
+                        }
+                    }
+                    
+                    // 如果上述方法失败，尝试最后的通用方法：寻找页面底部的所有链接
+                    if (searches.length === 0) {
+                        // 获取页面下半部分的所有链接
+                        const allLinks = Array.from(document.querySelectorAll('a'));
+                        const pageHeight = document.body.scrollHeight;
+                        const bottomLinks = allLinks.filter(link => {
+                            const rect = link.getBoundingClientRect();
+                            const linkTop = rect.top + window.pageYOffset;
+                            return linkTop > pageHeight * 0.7; // 只考虑页面底部70%区域的链接
+                        });
+                        
+                        // 从这些链接中过滤出可能的相关搜索
+                        for (const link of bottomLinks) {
+                            const text = link.textContent.trim();
+                            // 排除导航链接和无意义的短文本
+                            if (text && text.length > 3 && !text.match(/^(全部|视频|短视频|图片|购物|新闻|网页|图书|地图|航班)$/)) {
+                                searches.push(text);
+                            }
+                        }
+                    }
+                    
+                    return [...new Set(searches)]; // 返回去重后的结果
+                }
+            """)
+            
+            self.log_message.emit(f"找到 {len(searches)} 个相关搜索")
+            
+            # 排除Google导航分类
+            excluded_terms = ["全部", "视频", "短视频", "图片", "购物", "新闻", "网页", "图书", "地图", "航班"]
+            filtered_searches = [s for s in searches if s not in excluded_terms]
+            
+            if len(filtered_searches) < len(searches):
+                self.log_message.emit(f"过滤掉 {len(searches) - len(filtered_searches)} 个无关项")
+            
+            return filtered_searches
+            
+        except Exception as related_error:
+            self.log_message.emit(f"提取相关搜索时出错: {str(related_error)}")
+            self.log_message.emit(f"错误详情: {related_error}")
+            return []
 
 
 class SeoRpaMainWindow(QMainWindow):
