@@ -6,24 +6,26 @@
 ### Google 搜索下拉框
 
 - 1.get spotify unblocked
-2.get spotify++
+2.how to get spotify unblocked on school chromebook
 3.how to get spotify unblocked on chromebook
-4.how to get spotify unblocked at school
-5.unblock spotify
-6.spotify歌单
-7.spotify++
-8.spotify中文
+4.how to get spotify unblocked on school computer
+5.how can i get spotify unblocked at school
+6.how do i get spotify unblocked at school
+7.unblock songs on spotify
+8.how to unblock spotify
+9.get spotify code
+10.how to get spotify unblocked at school
 
 ### 相关搜索
 
-- 1.Spotify unblocked 76
-2.Spotify unblocked website
+- 1.Spotify unblocked website
+2.Spotify unblocked for school
 3.Spotify unblocked 66
-4.Spotify unblocked github
-5.Spotify unblocked for school
-6.Spotify unblocked for school without VPN
-7.Spotify unblocked Chromebook
-8.Spotify 网页版
+4.Spotify unblocked 76
+5.Spotify unblocked for school without VPN
+6.Spotify unblocked Chromebook
+7.Spotify unblocked github
+8.Spotify download
 
 ### GSC热门查询
 
@@ -41,6 +43,6 @@
 ### 相关问题
 
 - 1.How to get Spotify unblocked at school?
-2.Why do schools block Spotify?
-3.How to get Spotify on a school macbook?
-4.How to play unplayable songs on Spotify?
+2.How to get on Spotify when it's blocked?
+3.Why do schools block Spotify?
+4.How to get Spotify on a school macbook?
