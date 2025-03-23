@@ -51,11 +51,10 @@
 
 | main words | main word count | Key words | Volume | Keyword Difficulty |
 | --- | --- | --- | --- | --- |
-| chromebook | 3 | PPC Keyword Tool | 0 | n/a |
-| school | 3 | how to get spotify unblocked | 0 | n/a |
-| can | 1 | how can i get spotify unblocked at school | 0 | n/a |
-|  |  | how to get spotify on chromebook unblocked | 0 | n/a |
-|  |  | how to get spotify unblocked at school | 0 | n/a |
-|  |  | how to get spotify unblocked on chromebook | 0 | n/a |
-|  |  | how to get spotify unblocked on school chromebook | 0 | n/a |
-|  |  | how to get unblocked spotify | 0 | n/a |
+| chromebook | 3 | how to get spotify unblocked | 30 | 0% |
+| school | 3 | how can i get spotify unblocked at school | 0.00 | 0% |
+| can | 1 | how to get spotify on chromebook unblocked | 0.00 | 0% |
+|  |  | how to get spotify unblocked at school | 0.00 | 0% |
+|  |  | how to get spotify unblocked on chromebook | 0.00 | 0% |
+|  |  | how to get spotify unblocked on school chromebook | 0.00 | 0% |
+|  |  | how to get unblocked spotify | 0.00 | 0% |

@@ -58,13 +58,8 @@ def process_semrush(log_message_callback, page, page_name, screenshot_dir):
         log_message_callback("额外等待8秒确保页面完全加载...")
         time.sleep(8)
         
-        # 截取SEMrush页面
-        semrush_screenshot_path = os.path.join(screenshot_dir, f"semrush-{page_name}.png")
-        page.screenshot(path=semrush_screenshot_path, full_page=True)
-        log_message_callback(f"SEMrush页面完整截图已保存为: {semrush_screenshot_path}")
-        
-        # 简单检查页面是否有数据
-        log_message_callback("检查页面是否有关键词数据...")
+        # 取消截图保存，因为用户不需要
+        # 直接进入提取数据步骤
         
         # 提取边栏数据
         log_message_callback("提取SEMrush边栏数据...")
@@ -86,13 +81,7 @@ def process_semrush(log_message_callback, page, page_name, screenshot_dir):
             
     except Exception as semrush_error:
         log_message_callback(f"处理SEMrush数据时出错: {str(semrush_error)}")
-        # 截取当前页面状态作为错误记录
-        try:
-            error_screenshot_path = os.path.join(screenshot_dir, f"semrush-error-{page_name}.png")
-            page.screenshot(path=error_screenshot_path)
-            log_message_callback(f"错误状态截图已保存为: {error_screenshot_path}")
-        except:
-            pass
+        # 不再保存错误截图
         return False
 
 def extract_semrush_sidebar_data(log_message_callback, page):
@@ -114,8 +103,10 @@ def extract_semrush_sidebar_data(log_message_callback, page):
                         const text = textElement.textContent.trim();
                         const value = valueElement.textContent.trim();
                         
-                        // 只有当两者都存在值时添加，并且跳过"All keywords"
-                        if (text && value && text !== "All keywords") {
+                        // 只有当两者都存在值时添加，并且跳过"All keywords"和"PPC Keyword Tool"
+                        if (text && value && 
+                            text !== "All keywords" && 
+                            !text.includes("PPC")) {
                             result.push({
                                 text: text,
                                 value: value
@@ -139,102 +130,200 @@ def extract_semrush_sidebar_data(log_message_callback, page):
         return []
 
 def extract_semrush_keyword_data(log_message_callback, page):
-    """提取SEMrush主要关键词数据 - 基于页面观察优化"""
+    """提取SEMrush主要关键词数据 - 修复Volume和KD提取问题"""
     try:
-        # 创建调试目录
-        debug_dir = "debug_screenshots"
-        os.makedirs(debug_dir, exist_ok=True)
-        
-        # 直接提取关键词数据 - 使用简化但有效的方法
-        log_message_callback("使用简化方法直接提取关键词数据...")
-        keyword_data_direct = []
-        
-        # 直接从页面提取文本内容
-        page_text = page.content()
-        
-        # 直接保存页面源码进行调试
-        with open(os.path.join(debug_dir, "semrush_page_source.html"), "w", encoding="utf-8") as f:
-            f.write(page_text)
-        
-        # 使用更简单的Javascript来提取数据
-        raw_data = page.evaluate("""
+        # 使用更精确的JavaScript提取每一行的完整数据
+        keyword_rows = page.evaluate("""
             () => {
-                // 找到所有关键词链接
-                const keywordLinks = Array.from(document.querySelectorAll('a span'));
-                const volumeCells = Array.from(document.querySelectorAll('[role="cell"]'));
+                // 用于存储所有关键词行的数据
+                const rows = [];
                 
-                // 提取关键词文本
-                const keywordTexts = keywordLinks.map(link => link.textContent.trim())
-                    .filter(text => text.length > 3 && !text.includes('dashboard') && !text.includes('profile'));
+                // 找到表格或关键词容器
+                const tableContainer = document.querySelector('.sm-table-layout') || 
+                                      document.querySelector('table') || 
+                                      document.body;
                 
-                // 提取可能的搜索量数据 (通常是数字格式)
-                const volumeData = volumeCells.map(cell => cell.textContent.trim())
-                    .filter(text => /^[0-9,.]+$/.test(text) || /^[0-9,.]+[KMB]$/.test(text));
+                // 尝试方法1: 直接提取关键词行
+                try {
+                    // 获取所有表格行
+                    const tableRows = Array.from(tableContainer.querySelectorAll('[role="row"], tr, .sm-table-layout__row'));
+                    
+                    // 分析每一行
+                    for (let i = 0; i < tableRows.length; i++) {
+                        const row = tableRows[i];
+                        
+                        // 跳过表头行
+                        const isHeader = row.getAttribute('role') === 'rowheader' || 
+                                        row.querySelector('th') !== null || 
+                                        row.classList.contains('sm-table-layout__header-row');
+                        
+                        if (isHeader) {
+                            continue;
+                        }
+                        
+                        // 在当前行中获取关键词、搜索量和KD
+                        const keywordElement = row.querySelector('a span') || row.querySelector('a');
+                        
+                        if (!keywordElement) {
+                            continue; // 没有关键词元素，跳过
+                        }
+                        
+                        const keyword = keywordElement.textContent.trim();
+                        
+                        // 跳过工具名称和UI元素
+                        if (keyword === 'PPC Keyword Tool' || 
+                            keyword.includes('dashboard') || 
+                            keyword.includes('profile') ||
+                            keyword.includes('Domain') ||
+                            keyword.includes('Projects') ||
+                            keyword.includes('Analytics')) {
+                            continue;
+                        }
+                        
+                        // 获取单元格
+                        const cells = Array.from(row.querySelectorAll('[role="cell"], td, .sm-table-layout__cell'));
+                        
+                        // 提取搜索量和KD (通常在第5个和第9个单元格)
+                        let volume = "0";
+                        let kd = "n/a";
+                        
+                        // 尝试从第5个单元格获取搜索量
+                        if (cells.length >= 5) {
+                            const volumeText = cells[4].textContent.trim();
+                            if (/^[0-9,.]+$/.test(volumeText) || /^[0-9,.]+[KMB]$/.test(volumeText)) {
+                                volume = volumeText;
+                            }
+                        }
+                        
+                        // 尝试从第9个单元格获取KD
+                        if (cells.length >= 9) {
+                            const kdText = cells[8].textContent.trim();
+                            if (kdText.endsWith('%') || kdText === 'n/a') {
+                                kd = kdText;
+                            } else if (/^[0-9]+$/.test(kdText)) {
+                                kd = kdText + '%';  // 添加百分号
+                            }
+                        }
+                        
+                        // 如果上述方法未能提取搜索量和KD，尝试遍历所有单元格
+                        if (volume === "0" || kd === "n/a") {
+                            for (let j = 0; j < cells.length; j++) {
+                                const text = cells[j].textContent.trim();
+                                
+                                // 识别搜索量
+                                if (volume === "0" && 
+                                    (/^[0-9,.]+$/.test(text) || /^[0-9,.]+[KMB]$/.test(text))) {
+                                    volume = text;
+                                }
+                                
+                                // 识别KD
+                                if (kd === "n/a" && 
+                                    (text.endsWith('%') || 
+                                     (/^[0-9]+$/.test(text) && parseInt(text) >= 0 && parseInt(text) <= 100))) {
+                                    kd = text.endsWith('%') ? text : text + '%';
+                                }
+                            }
+                        }
+                        
+                        // 添加到结果
+                        rows.push({
+                            keyword: keyword,
+                            volume: volume,
+                            kd: kd
+                        });
+                    }
+                } catch (e) {
+                    // 出错时继续尝试下一种方法
+                }
                 
-                // 提取可能的KD数据 (通常带有%)
-                const kdData = volumeCells.map(cell => cell.textContent.trim())
-                    .filter(text => text.endsWith('%') || text === 'n/a');
+                // 如果方法1没有找到数据，尝试方法2: 直接查找表格单元格
+                if (rows.length === 0) {
+                    try {
+                        // 查找所有关键词单元格
+                        const keywordCells = Array.from(document.querySelectorAll('a span, a'))
+                            .filter(el => el.textContent.trim().length > 3);
+                        
+                        for (let i = 0; i < keywordCells.length; i++) {
+                            const keywordCell = keywordCells[i];
+                            const keyword = keywordCell.textContent.trim();
+                            
+                            // 跳过工具名称和UI元素
+                            if (keyword === 'PPC Keyword Tool' || 
+                                keyword.includes('dashboard') || 
+                                keyword.includes('profile')) {
+                                continue;
+                            }
+                            
+                            // 尝试找到包含该关键词的行
+                            let rowElement = keywordCell;
+                            while (rowElement && 
+                                  !rowElement.matches('[role="row"], tr, .sm-table-layout__row')) {
+                                rowElement = rowElement.parentElement;
+                                if (!rowElement) break;
+                            }
+                            
+                            let volume = "0";
+                            let kd = "n/a";
+                            
+                            // 如果找到了行，尝试获取相关数据
+                            if (rowElement) {
+                                // 获取所有单元格
+                                const cells = Array.from(rowElement.querySelectorAll('[role="cell"], td, .sm-table-layout__cell, div'));
+                                
+                                // 遍历单元格寻找搜索量和KD
+                                for (const cell of cells) {
+                                    const text = cell.textContent.trim();
+                                    
+                                    // 识别搜索量
+                                    if (/^[0-9,.]+$/.test(text) || /^[0-9,.]+[KMB]$/.test(text)) {
+                                        volume = text;
+                                    }
+                                    
+                                    // 识别KD
+                                    if (text.endsWith('%') || 
+                                        (/^[0-9]+$/.test(text) && parseInt(text) >= 0 && parseInt(text) <= 100)) {
+                                        kd = text.endsWith('%') ? text : text + '%';
+                                    }
+                                }
+                            }
+                            
+                            // 添加到结果
+                            rows.push({
+                                keyword: keyword,
+                                volume: volume,
+                                kd: kd
+                            });
+                        }
+                    } catch (e) {
+                        // 出错时继续尝试
+                    }
+                }
                 
-                return {
-                    keywords: keywordTexts,
-                    volumes: volumeData,
-                    kds: kdData
-                };
+                // 返回过滤掉PPC相关内容的行数据
+                return rows.filter(row => 
+                    row.keyword && 
+                    row.keyword !== 'PPC Keyword Tool' &&
+                    !row.keyword.includes('PPC') &&
+                    !row.keyword.includes('dashboard') &&
+                    !row.keyword.includes('profile')
+                );
             }
         """)
         
-        log_message_callback(f"找到 {len(raw_data['keywords'])} 个关键词")
-        log_message_callback(f"找到 {len(raw_data['volumes'])} 个搜索量数据")
-        log_message_callback(f"找到 {len(raw_data['kds'])} 个KD数据")
-        
-        # 构建关键词数据
-        max_items = min(len(raw_data['keywords']), 200)  # 限制处理项数
-        for i in range(max_items):
-            keyword = raw_data['keywords'][i] if i < len(raw_data['keywords']) else ""
-            volume = raw_data['volumes'][i] if i < len(raw_data['volumes']) else "0"
-            kd = raw_data['kds'][i] if i < len(raw_data['kds']) else "n/a"
-            
-            # 确保这是有效的关键词
-            if keyword and not any(ui_term in keyword.lower() for ui_term in ["profile", "dashboard", "projects", "analytics"]):
-                keyword_data_direct.append({
-                    "keyword": keyword,
-                    "volume": volume,
-                    "kd": kd
-                })
-        
-        # 使用一个额外的截图确保我们已经处理了页面
-        page.screenshot(path=os.path.join(debug_dir, "after_extraction.png"))
-        
-        # 最后的过滤 - 确保关键词与页面主题相关
-        filtered_data = []
-        for item in keyword_data_direct:
-            keyword = item['keyword'].lower()
-            # 检查相关性 - 包含主题相关词汇
-            if "spotify" in keyword or "premium" in keyword or "crack" in keyword or "pc" in keyword:
-                filtered_data.append(item)
-                
-        log_message_callback(f"提取并过滤得到 {len(filtered_data)} 个有效的关键词数据项")
+        log_message_callback(f"提取到 {len(keyword_rows)} 个关键词数据行")
         
         # 记录前10个关键词数据
-        for i, item in enumerate(filtered_data[:10]):
-            log_message_callback(f"关键词数据 {i+1}: {item['keyword']} - Volume:{item['volume']} - KD:{item['kd']}")
-            
-        return filtered_data
+        for i, row in enumerate(keyword_rows[:10]):
+            log_message_callback(f"关键词数据 {i+1}: {row['keyword']} - Volume:{row['volume']} - KD:{row['kd']}")
+        
+        return keyword_rows
         
     except Exception as e:
         log_message_callback(f"提取SEMrush关键词数据时出错: {str(e)}")
-        log_message_callback(f"错误详情: {e}")
-        
-        # 保存错误截图
-        try:
-            page.screenshot(path=os.path.join("debug_screenshots", "extraction_error.png"))
-        except:
-            pass
-            
         return []
 
 def update_semrush_markdown(log_message_callback, page_name, sidebar_data, keyword_data):
-    """更新markdown文件中的SEMrush数据"""
+    """更新markdown文件中的SEMrush数据 - 保持原来的逻辑但修复PPC问题"""
     if not sidebar_data and not keyword_data:
         log_message_callback("没有SEMrush数据可以更新到MD文件")
         return
@@ -280,7 +369,7 @@ def update_semrush_markdown(log_message_callback, page_name, sidebar_data, keywo
         md_content += f"\n\n{semrush_header}\n"
         semrush_index = md_content.find(semrush_header)
     
-    # 构建Markdown表格
+    # 构建Markdown表格 - 保持原来的逻辑
     table_content = "\n\n| main words | main word count | Key words | Volume | Keyword Difficulty |\n"
     table_content += "| --- | --- | --- | --- | --- |\n"
     
@@ -291,13 +380,18 @@ def update_semrush_markdown(log_message_callback, page_name, sidebar_data, keywo
     if max_rows == 0:
         table_content += "| | | | | |\n"
     else:
-        # 填充表格数据
+        # 填充表格数据 - 确保过滤掉PPC内容
+        filtered_sidebar = [item for item in sidebar_data if not item['text'].startswith('PPC')]
+        filtered_keywords = [item for item in keyword_data if not item['keyword'].startswith('PPC')]
+        
+        max_rows = max(len(filtered_sidebar), len(filtered_keywords))
+        
         for i in range(max_rows):
-            main_word = sidebar_data[i]['text'] if i < len(sidebar_data) else ""
-            main_word_count = sidebar_data[i]['value'] if i < len(sidebar_data) else ""
-            keyword = keyword_data[i]['keyword'] if i < len(keyword_data) else ""
-            volume = keyword_data[i]['volume'] if i < len(keyword_data) else ""
-            kd = keyword_data[i]['kd'] if i < len(keyword_data) else ""
+            main_word = filtered_sidebar[i]['text'] if i < len(filtered_sidebar) else ""
+            main_word_count = filtered_sidebar[i]['value'] if i < len(filtered_sidebar) else ""
+            keyword = filtered_keywords[i]['keyword'] if i < len(filtered_keywords) else ""
+            volume = filtered_keywords[i]['volume'] if i < len(filtered_keywords) else ""
+            kd = filtered_keywords[i]['kd'] if i < len(filtered_keywords) else ""
             
             table_content += f"| {main_word} | {main_word_count} | {keyword} | {volume} | {kd} |\n"
     
