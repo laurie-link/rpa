@@ -1,5 +1,4 @@
-
-# get-spotify-unblocked
+# add spotify to video
 
 ## 关键词来源
 
@@ -25,7 +24,7 @@
 5.Spotify unblocked for school without VPN
 6.Spotify unblocked Chromebook
 7.Spotify unblocked github
-8.Spotify download
+8.How to get Spotify Premium for free forever
 
 ### GSC热门查询
 

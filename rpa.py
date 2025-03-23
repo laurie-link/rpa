@@ -344,10 +344,9 @@ class RPAWorker(QThread):
         
         # 检查是否需要登录
         if page.url.startswith("https://accounts.google.com/"):
-            self.log_message.emit("需要登录，请手动完成登录...")
-            # 等待导航到原始URL或包含search-console的URL
-            page.wait_for_url(lambda url: "search-console" in url or "search.google.com" in url, timeout=120000)
-            self.log_message.emit("检测到登录成功，继续执行...")
+            self.log_message.emit("检测到需要登录，开始自动登录流程...")
+            self.handle_google_login(page, "crawlyjoe98@gmail.com", "Cccy1314ss")
+            self.log_message.emit("登录完成，继续执行...")
         
         # 添加随机滚动
         for _ in range(random.randint(2, 4)):
@@ -356,6 +355,9 @@ class RPAWorker(QThread):
         
         # 截取第一个图表
         try:
+
+            time.sleep(10)
+            self.log_message.emit("等待10秒...")
             selector = "#yDmH0d > c-wiz.zQTmif.SSPGKf.eejsDc > c-wiz > div > div.OoO4Vb > div > div > div.VfPpkd-WsjYwc.VfPpkd-WsjYwc-OWXEXe-INsAgc.KC1dQ.Usd1Ac.AaN0Dd.YJ1SEc.pTyMIf > c-wiz"
             
             self.log_message.emit("定位第一个目标元素...")
@@ -1096,6 +1098,64 @@ class RPAWorker(QThread):
                     self.log_message.emit("检测到已离开同意条款页面")
         except Exception as consent_error:
             self.log_message.emit(f"处理同意条款页面时出错: {str(consent_error)}")
+
+    def handle_google_login(self, page, username, password):
+        """处理Google账号登录流程"""
+        try:
+            self.log_message.emit("开始处理Google登录...")
+            
+            # 第一步：输入邮箱
+            self.log_message.emit("查找并填写邮箱输入框...")
+            # 等待邮箱输入框出现
+            email_selector = "input[type='email']"
+            page.wait_for_selector(email_selector, state="visible", timeout=30000)
+            
+            # 随机延迟模拟人工输入
+            time.sleep(random.uniform(0.5, 1.5))
+            
+            # 填写邮箱
+            page.fill(email_selector, username)
+            self.log_message.emit("邮箱已输入")
+            
+            # 点击"下一步"按钮
+            next_button_selector = "button:has-text('下一步'), button:has-text('Next')"
+            self.log_message.emit("点击下一步按钮...")
+            page.click(next_button_selector)
+            
+            # 第二步：输入密码
+            self.log_message.emit("等待密码输入框出现...")
+            password_selector = "input[type='password']"
+            page.wait_for_selector(password_selector, state="visible", timeout=30000)
+            
+            # 随机延迟
+            time.sleep(random.uniform(1.0, 2.0))
+            
+            # 填写密码
+            page.fill(password_selector, password)
+            self.log_message.emit("密码已输入")
+            
+            # 点击"下一步"按钮登录
+            self.log_message.emit("点击登录按钮...")
+            page.click(next_button_selector)
+            
+            # 等待登录完成，页面跳转
+            self.log_message.emit("等待登录完成并跳转...")
+            page.wait_for_url(lambda url: "search-console" in url or "search.google.com" in url, timeout=60000)
+            
+            # 额外检查是否存在二次验证或其他安全检查
+            if "accounts.google.com" in page.url or "signin" in page.url:
+                self.log_message.emit("检测到需要额外验证，可能需要手动操作...")
+                page.wait_for_url(lambda url: "search-console" in url or "search.google.com" in url, timeout=120000)
+                
+            self.log_message.emit("登录成功完成")
+            return True
+            
+        except Exception as e:
+            self.log_message.emit(f"自动登录过程中出错: {str(e)}")
+            self.log_message.emit("尝试等待手动登录...")
+            # 仍然等待用户可能的手动登录
+            page.wait_for_url(lambda url: "search-console" in url or "search.google.com" in url, timeout=120000)
+            return False
 
 
 class SeoRpaMainWindow(QMainWindow):

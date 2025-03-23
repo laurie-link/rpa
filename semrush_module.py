@@ -58,15 +58,12 @@ def process_semrush(log_message_callback, page, page_name, screenshot_dir):
         log_message_callback("额外等待8秒确保页面完全加载...")
         time.sleep(8)
         
-        # 取消截图保存，因为用户不需要
-        # 直接进入提取数据步骤
-        
         # 提取边栏数据
-        log_message_callback("提取SEMrush边栏数据...")
+        log_message_callback("提取SEMrush边栏数据(最多20条)...")
         sidebar_data = extract_semrush_sidebar_data(log_message_callback, page)
         
         # 提取主要关键词数据
-        log_message_callback("提取SEMrush主要关键词数据...")
+        log_message_callback("提取SEMrush主要关键词数据(最多20条)...")
         keyword_data = extract_semrush_keyword_data(log_message_callback, page)
         
         # 检验提取的数据
@@ -81,11 +78,10 @@ def process_semrush(log_message_callback, page, page_name, screenshot_dir):
             
     except Exception as semrush_error:
         log_message_callback(f"处理SEMrush数据时出错: {str(semrush_error)}")
-        # 不再保存错误截图
         return False
 
 def extract_semrush_sidebar_data(log_message_callback, page):
-    """提取SEMrush边栏数据"""
+    """提取SEMrush边栏数据，最多返回20条"""
     try:
         # 使用JavaScript评估提取边栏数据
         sidebar_data = page.evaluate("""
@@ -94,8 +90,12 @@ def extract_semrush_sidebar_data(log_message_callback, page):
                 
                 // 获取所有关键词组标题和数量
                 const groups = document.querySelectorAll(".sm-group-content");
+                let count = 0;
                 
                 for (const group of groups) {
+                    // 只提取前20条数据
+                    if (count >= 20) break;
+                    
                     const textElement = group.querySelector(".sm-group-content__text");
                     const valueElement = group.querySelector(".sm-group-content__value");
                     
@@ -111,6 +111,7 @@ def extract_semrush_sidebar_data(log_message_callback, page):
                                 text: text,
                                 value: value
                             });
+                            count++;
                         }
                     }
                 }
@@ -130,7 +131,7 @@ def extract_semrush_sidebar_data(log_message_callback, page):
         return []
 
 def extract_semrush_keyword_data(log_message_callback, page):
-    """提取SEMrush主要关键词数据 - 修复Volume和KD提取问题"""
+    """提取SEMrush主要关键词数据，最多返回20条，并改进过滤逻辑"""
     try:
         # 使用更精确的JavaScript提取每一行的完整数据
         keyword_rows = page.evaluate("""
@@ -143,13 +144,70 @@ def extract_semrush_keyword_data(log_message_callback, page):
                                       document.querySelector('table') || 
                                       document.body;
                 
+                // 用于计数已提取的有效关键词数量
+                let keywordCount = 0;
+                const maxKeywords = 100; // 先提取更多，后面再过滤
+                
+                // 常见UI元素和导航菜单项列表
+                const uiTerms = [
+                    'Features', 'Pricing', 'Help Center', 'What\\'s New', 'Webinars', 
+                    'Insights', 'Hire', 'Academy', 'Top Websites', 'Content Marketing', 
+                    'Local Marketing', 'About Us', 'Login', 'Sign Up', 'Contact', 
+                    'Support', 'Documentation', 'Blog', 'API', 'Tools'
+                ];
+                
+                // 关键词有效性检查函数
+                const isValidKeyword = (text) => {
+                    if (!text || text.length < 3) return false;
+                    
+                    // 跳过工具名称和UI元素
+                    if (text === 'PPC Keyword Tool' ||
+                        text.includes('dashboard') ||
+                        text.includes('profile') ||
+                        text.includes('Domain') ||
+                        text.includes('Projects') ||
+                        text.includes('Analytics')) {
+                        return false;
+                    }
+                    
+                    // 跳过过长的文本（可能是描述性文本）
+                    if (text.length > 80) return false;
+                    
+                    // 跳过包含HTML标签的文本
+                    if (text.includes('<') || text.includes('>')) return false;
+                    
+                    // 检查是否是UI元素
+                    for (const term of uiTerms) {
+                        if (text === term || text.startsWith(term) || 
+                            text.toLowerCase() === term.toLowerCase() || 
+                            text.toLowerCase().startsWith(term.toLowerCase())) {
+                            return false;
+                        }
+                    }
+                    
+                    // 跳过可能是URL或路径的文本
+                    if (text.includes('/') || text.includes('http')) return false;
+                    
+                    // 跳过首字母大写的单词（可能是导航项）
+                    if (/^[A-Z][a-z]+$/.test(text)) return false;
+                    
+                    // 跳过包含过多符号的文本 - 修复转义问题
+                    const symbolCount = (text.match(/[!@#$%^&*()_+=\\[\\]{};':"\\|,.<>\\/?-]/g) || []).length;
+                    if (symbolCount > 2) return false;
+                    
+                    // 跳过只有单个字符的文本
+                    if (text.trim().split(/\\s+/).length < 2 && text.length < 10) return false;
+                    
+                    return true;
+                };
+                
                 // 尝试方法1: 直接提取关键词行
                 try {
                     // 获取所有表格行
                     const tableRows = Array.from(tableContainer.querySelectorAll('[role="row"], tr, .sm-table-layout__row'));
                     
                     // 分析每一行
-                    for (let i = 0; i < tableRows.length; i++) {
+                    for (let i = 0; i < tableRows.length && keywordCount < maxKeywords; i++) {
                         const row = tableRows[i];
                         
                         // 跳过表头行
@@ -170,13 +228,8 @@ def extract_semrush_keyword_data(log_message_callback, page):
                         
                         const keyword = keywordElement.textContent.trim();
                         
-                        // 跳过工具名称和UI元素
-                        if (keyword === 'PPC Keyword Tool' || 
-                            keyword.includes('dashboard') || 
-                            keyword.includes('profile') ||
-                            keyword.includes('Domain') ||
-                            keyword.includes('Projects') ||
-                            keyword.includes('Analytics')) {
+                        // 使用改进的关键词过滤逻辑
+                        if (!isValidKeyword(keyword)) {
                             continue;
                         }
                         
@@ -225,101 +278,42 @@ def extract_semrush_keyword_data(log_message_callback, page):
                             }
                         }
                         
-                        // 添加到结果
+                        // 添加到结果并递增计数器
                         rows.push({
                             keyword: keyword,
                             volume: volume,
                             kd: kd
                         });
+                        keywordCount++;
                     }
                 } catch (e) {
                     // 出错时继续尝试下一种方法
+                    console.error("方法1出错:", e);
                 }
                 
-                // 如果方法1没有找到数据，尝试方法2: 直接查找表格单元格
-                if (rows.length === 0) {
-                    try {
-                        // 查找所有关键词单元格
-                        const keywordCells = Array.from(document.querySelectorAll('a span, a'))
-                            .filter(el => el.textContent.trim().length > 3);
-                        
-                        for (let i = 0; i < keywordCells.length; i++) {
-                            const keywordCell = keywordCells[i];
-                            const keyword = keywordCell.textContent.trim();
-                            
-                            // 跳过工具名称和UI元素
-                            if (keyword === 'PPC Keyword Tool' || 
-                                keyword.includes('dashboard') || 
-                                keyword.includes('profile')) {
-                                continue;
-                            }
-                            
-                            // 尝试找到包含该关键词的行
-                            let rowElement = keywordCell;
-                            while (rowElement && 
-                                  !rowElement.matches('[role="row"], tr, .sm-table-layout__row')) {
-                                rowElement = rowElement.parentElement;
-                                if (!rowElement) break;
-                            }
-                            
-                            let volume = "0";
-                            let kd = "n/a";
-                            
-                            // 如果找到了行，尝试获取相关数据
-                            if (rowElement) {
-                                // 获取所有单元格
-                                const cells = Array.from(rowElement.querySelectorAll('[role="cell"], td, .sm-table-layout__cell, div'));
-                                
-                                // 遍历单元格寻找搜索量和KD
-                                for (const cell of cells) {
-                                    const text = cell.textContent.trim();
-                                    
-                                    // 识别搜索量
-                                    if (/^[0-9,.]+$/.test(text) || /^[0-9,.]+[KMB]$/.test(text)) {
-                                        volume = text;
-                                    }
-                                    
-                                    // 识别KD
-                                    if (text.endsWith('%') || 
-                                        (/^[0-9]+$/.test(text) && parseInt(text) >= 0 && parseInt(text) <= 100)) {
-                                        kd = text.endsWith('%') ? text : text + '%';
-                                    }
-                                }
-                            }
-                            
-                            // 添加到结果
-                            rows.push({
-                                keyword: keyword,
-                                volume: volume,
-                                kd: kd
-                            });
-                        }
-                    } catch (e) {
-                        // 出错时继续尝试
-                    }
-                }
-                
-                // 返回过滤掉PPC相关内容的行数据
-                return rows.filter(row => 
-                    row.keyword && 
+                // 过滤结果，确保没有UI元素
+                const filteredRows = rows.filter(row => 
+                    isValidKeyword(row.keyword) &&
                     row.keyword !== 'PPC Keyword Tool' &&
-                    !row.keyword.includes('PPC') &&
-                    !row.keyword.includes('dashboard') &&
-                    !row.keyword.includes('profile')
+                    !row.keyword.includes('PPC')
                 );
+                
+                // 返回最多20条记录
+                return filteredRows.slice(0, 20);
             }
         """)
         
         log_message_callback(f"提取到 {len(keyword_rows)} 个关键词数据行")
         
-        # 记录前10个关键词数据
-        for i, row in enumerate(keyword_rows[:10]):
+        # 记录所有提取的关键词数据
+        for i, row in enumerate(keyword_rows):
             log_message_callback(f"关键词数据 {i+1}: {row['keyword']} - Volume:{row['volume']} - KD:{row['kd']}")
         
         return keyword_rows
         
     except Exception as e:
         log_message_callback(f"提取SEMrush关键词数据时出错: {str(e)}")
+        log_message_callback(f"错误详情: {e}")
         return []
 
 def update_semrush_markdown(log_message_callback, page_name, sidebar_data, keyword_data):
