@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSettings
 from PyQt5.QtGui import QIcon, QTextCursor
 from playwright.sync_api import sync_playwright
-
+import semrush_module
 
 
 class LogRedirector:
@@ -120,6 +120,15 @@ class RPAWorker(QThread):
                 self.log_message.emit(f"开始处理Google搜索数据，搜索查询: {search_query}")
                 self.process_google_search_incognito(p, search_query, page_name, screenshot_dir)
                 
+                self.log_message.emit(f"开始处理SEMrush关键词数据")
+                # 创建一个新的浏览器和页面
+                browser = self.launch_browser(p)
+                page = browser.new_page()
+                self.setup_page(page)
+                # 处理SEMrush
+                semrush_module.process_semrush(self.log_message.emit, page, page_name, screenshot_dir)
+                # 关闭浏览器
+                browser.close()
             except Exception as e:
                 self.log_message.emit(f"执行RPA时出错: {str(e)}")
                 # 确保浏览器关闭

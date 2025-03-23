@@ -44,5 +44,18 @@
 
 - 1.How to get Spotify unblocked at school?
 2.How to get on Spotify when it's blocked?
-3.Why do schools block Spotify?
-4.How to get Spotify on a school macbook?
+3.How do you get into Spotify on a school Chromebook?
+4.Why do schools block Spotify?
+
+### SEMrush
+
+| main words | main word count | Key words | Volume | Keyword Difficulty |
+| --- | --- | --- | --- | --- |
+| chromebook | 3 | PPC Keyword Tool | 0 | n/a |
+| school | 3 | how to get spotify unblocked | 0 | n/a |
+| can | 1 | how can i get spotify unblocked at school | 0 | n/a |
+|  |  | how to get spotify on chromebook unblocked | 0 | n/a |
+|  |  | how to get spotify unblocked at school | 0 | n/a |
+|  |  | how to get spotify unblocked on chromebook | 0 | n/a |
+|  |  | how to get spotify unblocked on school chromebook | 0 | n/a |
+|  |  | how to get unblocked spotify | 0 | n/a |
