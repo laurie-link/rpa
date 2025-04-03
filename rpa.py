@@ -99,16 +99,42 @@ class RPAWorker(QThread):
                 
             with sync_playwright() as p:
                 try:
-                    self.log_message.emit(f"开始处理Google搜索数据，搜索查询: {keyword}")
-                    self.process_google_search_incognito(p, keyword, page_name, screenshot_dir)
+                    # 处理Google搜索（原创文章模式下，只处理SERP和SEMrush）
+                    if self.settings.value("scrape_serp", "true") == "true":
+                        self.log_message.emit(f"开始处理Google搜索数据，搜索查询: {keyword}")
+                        self.process_google_search_incognito(p, keyword, page_name, screenshot_dir)
+                    else:
+                        self.log_message.emit("已跳过SERP数据抓取（根据设置）")
                     
                     # 处理SEMrush
-                    self.log_message.emit(f"开始处理SEMrush关键词数据")
-                    browser = self.launch_browser(p)
-                    page = browser.new_page()
-                    self.setup_page(page)
-                    semrush_module.process_semrush(self.log_message.emit, page, page_name, screenshot_dir)
+                    if self.settings.value("scrape_semrush", "true") == "true":
+                        self.log_message.emit(f"开始处理SEMrush关键词数据")
+                        # 创建一个新的浏览器和页面
+                        browser = self.launch_browser(p)
+                        page = browser.new_page()
+                        self.setup_page(page)
+                        semrush_module.process_semrush(self.log_message.emit, page, page_name, screenshot_dir)
+                        # 关闭浏览器
+                        browser.close()
+                    else:
+                        self.log_message.emit("已跳过SEMrush数据抓取（根据设置）")
+                    
+                    # 处理GA
+                    if self.settings.value("scrape_ga", "true") == "true":
+                        self.process_ga(page, ga_url, page_name, ga_screenshot_path, screenshot_dir)
+                    else:
+                        self.log_message.emit("已跳过GA数据抓取（根据设置）")
+                    
+                    # 关闭带配置的浏览器
                     browser.close()
+                    
+                    # 处理Google搜索（无痕模式）
+                    if self.settings.value("scrape_serp", "true") == "true":
+                        search_query = page_name.replace("-", " ")
+                        self.log_message.emit(f"开始处理Google搜索数据，搜索查询: {search_query}")
+                        self.process_google_search_incognito(p, search_query, page_name, screenshot_dir)
+                    else:
+                        self.log_message.emit("已跳过SERP数据抓取（根据设置）")
                 except Exception as e:
                     self.log_message.emit(f"执行RPA时出错: {str(e)}")
                     try:
@@ -149,29 +175,41 @@ class RPAWorker(QThread):
                     self.setup_page(page)
                     
                     # 处理GSC
-                    self.process_gsc(page, gsc_url, page_name, first_screenshot_path, second_screenshot_path, screenshot_dir)
+                    if self.settings.value("scrape_gsc", "true") == "true":
+                        self.process_gsc(page, gsc_url, page_name, first_screenshot_path, second_screenshot_path, screenshot_dir)
+                    else:
+                        self.log_message.emit("已跳过GSC数据抓取（根据设置）")
                     
                     # 处理GA
                     if self.settings.value("scrape_ga", "true") == "true":
                         self.process_ga(page, ga_url, page_name, ga_screenshot_path, screenshot_dir)
+                    else:
+                        self.log_message.emit("已跳过GA数据抓取（根据设置）")
                     
                     # 关闭带配置的浏览器
                     browser.close()
                     
                     # 处理Google搜索（无痕模式）
-                    search_query = page_name.replace("-", " ")
-                    self.log_message.emit(f"开始处理Google搜索数据，搜索查询: {search_query}")
-                    self.process_google_search_incognito(p, search_query, page_name, screenshot_dir)
+                    if self.settings.value("scrape_serp", "true") == "true":
+                        search_query = page_name.replace("-", " ")
+                        self.log_message.emit(f"开始处理Google搜索数据，搜索查询: {search_query}")
+                        self.process_google_search_incognito(p, search_query, page_name, screenshot_dir)
+                    else:
+                        self.log_message.emit("已跳过SERP数据抓取（根据设置）")
                     
-                    self.log_message.emit(f"开始处理SEMrush关键词数据")
-                    # 创建一个新的浏览器和页面
-                    browser = self.launch_browser(p)
-                    page = browser.new_page()
-                    self.setup_page(page)
                     # 处理SEMrush
-                    semrush_module.process_semrush(self.log_message.emit, page, page_name, screenshot_dir)
-                    # 关闭浏览器
-                    browser.close()
+                    if self.settings.value("scrape_semrush", "true") == "true":
+                        self.log_message.emit(f"开始处理SEMrush关键词数据")
+                        # 创建一个新的浏览器和页面
+                        browser = self.launch_browser(p)
+                        page = browser.new_page()
+                        self.setup_page(page)
+                        # 处理SEMrush
+                        semrush_module.process_semrush(self.log_message.emit, page, page_name, screenshot_dir)
+                        # 关闭浏览器
+                        browser.close()
+                    else:
+                        self.log_message.emit("已跳过SEMrush数据抓取（根据设置）")
                 except Exception as e:
                     self.log_message.emit(f"执行RPA时出错: {str(e)}")
                     # 确保浏览器关闭
@@ -1951,12 +1989,22 @@ class SeoRpaMainWindow(QMainWindow):
         self.invisible_browser_checkbox.setChecked(True)
         self.scrape_ga_checkbox = QCheckBox("抓取GA数据")
         self.scrape_ga_checkbox.setChecked(True)
+        self.scrape_gsc_checkbox = QCheckBox("抓取GSC数据")
+        self.scrape_gsc_checkbox.setChecked(True)
+        self.scrape_serp_checkbox = QCheckBox("抓取SERP元素")
+        self.scrape_serp_checkbox.setChecked(True)
+        self.scrape_semrush_checkbox = QCheckBox("抓取SEMrush关键词")
+        self.scrape_semrush_checkbox.setChecked(True)
         self.original_article_checkbox = QCheckBox("原创文章模式 (输入关键词而非URL)")
-        self.original_article_checkbox.setToolTip("启用后将只收集搜索相关数据，不抓取GSC和GA数据")
+        self.original_article_checkbox.setToolTip("启用后将只收集搜索相关数据，不抓取GSC和GA数据，可通过上方复选框控制具体抓取内容")
         
         # 添加工具提示
         self.headless_checkbox.setToolTip("完全无头模式，效率更高但可能被检测为机器人")
         self.invisible_browser_checkbox.setToolTip("在后台运行有头浏览器但不显示界面，可以更好地避免安全检测")
+        self.scrape_ga_checkbox.setToolTip("是否抓取Google Analytics数据")
+        self.scrape_gsc_checkbox.setToolTip("是否抓取Google Search Console数据")
+        self.scrape_serp_checkbox.setToolTip("是否抓取Google搜索结果页面(SERP)数据")
+        self.scrape_semrush_checkbox.setToolTip("是否抓取SEMrush关键词数据")
         
         # 设置无头模式和隐形浏览器复选框互斥
         def update_checkboxes():
@@ -1967,13 +2015,27 @@ class SeoRpaMainWindow(QMainWindow):
             if self.invisible_browser_checkbox.isChecked():
                 self.headless_checkbox.setChecked(False)
         
+        def update_article_mode_checkboxes():
+            if self.original_article_checkbox.isChecked():
+                # 原创文章模式下禁用GSC和GA选项
+                self.scrape_gsc_checkbox.setEnabled(False)
+                self.scrape_ga_checkbox.setEnabled(False)
+            else:
+                # 非原创文章模式下启用所有选项
+                self.scrape_gsc_checkbox.setEnabled(True)
+                self.scrape_ga_checkbox.setEnabled(True)
+            self.update_input_labels()
+        
         self.headless_checkbox.stateChanged.connect(update_checkboxes)
         self.invisible_browser_checkbox.stateChanged.connect(update_invisible_checkboxes)
-        self.original_article_checkbox.stateChanged.connect(self.update_input_labels)
+        self.original_article_checkbox.stateChanged.connect(update_article_mode_checkboxes)
         
         options_layout.addWidget(self.headless_checkbox)
         options_layout.addWidget(self.invisible_browser_checkbox)
         options_layout.addWidget(self.scrape_ga_checkbox)
+        options_layout.addWidget(self.scrape_gsc_checkbox)
+        options_layout.addWidget(self.scrape_serp_checkbox)
+        options_layout.addWidget(self.scrape_semrush_checkbox)
         options_layout.addWidget(self.original_article_checkbox)
         
         options_group.setLayout(options_layout)
@@ -2049,6 +2111,9 @@ class SeoRpaMainWindow(QMainWindow):
         self.settings.setValue("headless_mode", "true" if self.headless_checkbox.isChecked() else "false")
         self.settings.setValue("invisible_browser", "true" if self.invisible_browser_checkbox.isChecked() else "false")
         self.settings.setValue("scrape_ga", "true" if self.scrape_ga_checkbox.isChecked() else "false")
+        self.settings.setValue("scrape_gsc", "true" if self.scrape_gsc_checkbox.isChecked() else "false")
+        self.settings.setValue("scrape_serp", "true" if self.scrape_serp_checkbox.isChecked() else "false")
+        self.settings.setValue("scrape_semrush", "true" if self.scrape_semrush_checkbox.isChecked() else "false")
         self.settings.setValue("original_article_mode", "true" if self.original_article_checkbox.isChecked() else "false")
         
         QMessageBox.information(self, "设置", "设置已保存")
@@ -2062,6 +2127,9 @@ class SeoRpaMainWindow(QMainWindow):
         self.headless_checkbox.setChecked(self.settings.value("headless_mode", "false") == "true")
         self.invisible_browser_checkbox.setChecked(self.settings.value("invisible_browser", "true") == "true")
         self.scrape_ga_checkbox.setChecked(self.settings.value("scrape_ga", "true") == "true")
+        self.scrape_gsc_checkbox.setChecked(self.settings.value("scrape_gsc", "true") == "true")
+        self.scrape_serp_checkbox.setChecked(self.settings.value("scrape_serp", "true") == "true")
+        self.scrape_semrush_checkbox.setChecked(self.settings.value("scrape_semrush", "true") == "true")
         self.original_article_checkbox.setChecked(self.settings.value("original_article_mode", "false") == "true")
         
         # 确保无头模式和隐形浏览器模式不会同时被选中
@@ -2071,6 +2139,14 @@ class SeoRpaMainWindow(QMainWindow):
         
         # 更新输入标签
         self.update_input_labels()
+        
+        # 更新原创文章模式下的复选框状态
+        if self.original_article_checkbox.isChecked():
+            self.scrape_gsc_checkbox.setEnabled(False)
+            self.scrape_ga_checkbox.setEnabled(False)
+        else:
+            self.scrape_gsc_checkbox.setEnabled(True)
+            self.scrape_ga_checkbox.setEnabled(True)
     
     def start_task(self):
         # 获取URL列表或关键词列表

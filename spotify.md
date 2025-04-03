@@ -50,23 +50,23 @@
 
 | main words | main word count | Key words | Volume | Keyword Difficulty |
 | --- | --- | --- | --- | --- |
-| playlist | 72,076 | spotify login | 673,000 | 100% |
-| song | 58,879 | spotify premium | 550,000 | 79% |
-| music | 44,132 | spotify wrapped 2024 | 550,000 | 87% |
-| premium | 43,263 | spotify web player | 450,000 | 50% |
-| play | 41,419 | spotify stats | 301,000 | 55% |
-| can | 34,251 | spotify wrapped | 201,000 | 88% |
-| com | 23,639 | spotify download | 135,000 | 75% |
-| artist | 23,020 | stats for spotify | 110,000 | 69% |
-| get | 22,515 | spotify for artists | 90,500 | 74% |
-| free | 21,676 | when does spotify wrapped come out | 74,000 | 65% |
-| podcast | 20,908 | spotify account | 60,500 | 93% |
-| download | 20,901 | spotify stock | 60,500 | 65% |
-| wrap | 20,162 | when is spotify wrapped 2024 | 60,500 | 81% |
-| app | 17,053 | how much is spotify premium | 49,500 | 76% |
-| top | 16,666 | spotify careers | 40,500 | 56% |
-| open | 16,165 | spotify family plan | 40,500 | 39% |
-| account | 15,949 | spotify for podcasters | 40,500 | 60% |
-| stream | 14,997 | spotify premium cost | 40,500 | 67% |
-| iphone | 13,149 | spotify.com | 40,500 | 100% |
-| https | 13,143 | spotify - web player: music for everyone | 33,100 | 36% |
+| premium | 1,530,150 | spotify | 13,600,000 | 100% |
+| wrap | 1,327,480 | spotify login | 673,000 | 100% |
+| play | 955,730 | spotify premium | 550,000 | 100% |
+| playlist | 865,370 | spotify wrapped 2024 | 550,000 | 81% |
+| song | 831,070 | spotify web player | 450,000 | 48% |
+| 2024 | 786,720 | spotify stats | 301,000 | 62% |
+| login | 779,470 | spotify wrapped | 201,000 | 90% |
+| music | 673,720 | spotify download | 135,000 | 88% |
+| artist | 641,300 | stats for spotify | 110,000 | 70% |
+| download | 619,860 | spotify for artists | 90,500 | 67% |
+| web | 612,080 | when does spotify wrapped come out | 74,000 | 57% |
+| state | 474,770 | spotify account | 60,500 | 95% |
+| free | 429,230 | spotify stock | 60,500 | 79% |
+| top | 415,130 | when is spotify wrapped 2024 | 60,500 | 70% |
+| podcast | 375,840 | how much is spotify premium | 49,500 | 66% |
+| com | 367,800 | spotify careers | 40,500 | 50% |
+| can | 330,070 | spotify family plan | 40,500 | 48% |
+| account | 319,910 | spotify for podcasters | 40,500 | 55% |
+| stream | 273,090 | spotify premium cost | 40,500 | 73% |
+| apple | 264,880 | spotify.com | 40,500 | 100% |
