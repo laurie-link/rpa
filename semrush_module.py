@@ -31,38 +31,144 @@ def process_semrush(log_message_callback, page, page_name, screenshot_dir):
             log_message_callback(f"导航到SEMrush Keywords Magic Tool页面: {semrush_url}")
             page.goto(semrush_url, timeout=60000)
             
-            # 等待页面加载
-            log_message_callback("等待SEMrush页面加载...")
-            page.wait_for_load_state("networkidle", timeout=30000)
-            
-            # 检查是否出现错误页面
-            if check_semrush_error_page(log_message_callback, page):
-                log_message_callback("检测到SEMrush错误页面，将进行重试...")
-                retry_count += 1
-                continue
-                
-            # 等待关键词元素出现
-            log_message_callback("等待SEMrush关键词元素出现...")
-            try:
-                # 尝试等待关键词表格行或关键词组元素出现
-                page.wait_for_selector(".sm-table-layout__row, [role='row'], tr, .sm-group-content", 
-                                     state="visible", timeout=60000)
-                log_message_callback("SEMrush关键词元素已出现，继续处理...")
-            except Exception as wait_error:
-                log_message_callback(f"等待元素超时，将检查页面状态: {str(wait_error)}")
-                
-                # 检查是否是无数据页面
-                if check_no_data_page(log_message_callback, page):
-                    log_message_callback("检测到此关键词没有搜索量数据，创建空记录...")
-                    # 创建空数据并返回
-                    update_semrush_markdown(log_message_callback, page_name, [], [])
-                    return True
+            # 立即检查是否出现任何错误页面
+            error_type = check_semrush_error_page(log_message_callback, page)
+            if error_type:
+                if error_type == 'login_expired' or error_type == 'redirected_to_login':
+                    log_message_callback(f"检测到SEMrush账号在其他地方登录或会话失效，立即重试...")
+                    # 截取400错误页面截图以便调试
+                    error_screenshot_path = os.path.join(screenshot_dir, f"semrush-400error-{page_name}-{retry_count}.png")
+                    try:
+                        page.screenshot(path=error_screenshot_path)
+                        log_message_callback(f"已保存400错误页面截图: {error_screenshot_path}")
+                    except Exception as ss_error:
+                        log_message_callback(f"保存截图时出错: {str(ss_error)}")
+                elif error_type == 'data_unavailable':
+                    log_message_callback(f"检测到SEMrush数据不可用错误，这也表示没有相关数据...")
+                    # 截取数据错误页面截图以便调试
+                    error_screenshot_path = os.path.join(screenshot_dir, f"semrush-data-error-{page_name}-{retry_count}.png")
+                    try:
+                        page.screenshot(path=error_screenshot_path)
+                        log_message_callback(f"已保存数据错误页面截图: {error_screenshot_path}")
+                    except Exception as ss_error:
+                        log_message_callback(f"保存截图时出错: {str(ss_error)}")
                     
-                # 检查是否是错误页面
-                if check_semrush_error_page(log_message_callback, page):
-                    log_message_callback("检测到SEMrush错误页面，将进行重试...")
+                    # 与no_data_found类似，直接创建空记录并继续
+                    log_message_callback("由于SEMrush报告没有此关键词的数据（数据不可用错误），创建空记录并继续...")
+                    update_semrush_markdown(log_message_callback, page_name, [], [], {
+                        'allKeywords': '0',
+                        'totalVolume': '0',
+                        'averageKD': 'N/A',
+                        'note': 'SEMrush报告没有此关键词的相关数据（数据不可用错误）'
+                    })
+                    return True
+                elif error_type == 'no_data_found':
+                    log_message_callback(f"检测到SEMrush无数据错误页面，无法找到相关关键词数据...")
+                    # 截取无数据错误页面截图
+                    error_screenshot_path = os.path.join(screenshot_dir, f"semrush-no-data-{page_name}-{retry_count}.png")
+                    try:
+                        page.screenshot(path=error_screenshot_path)
+                        log_message_callback(f"已保存无数据错误页面截图: {error_screenshot_path}")
+                    except Exception as ss_error:
+                        log_message_callback(f"保存截图时出错: {str(ss_error)}")
+                    
+                    # 在这种情况下，我们可以选择创建一个空的数据记录并返回，而不是重试
+                    # 因为这表示该关键词确实没有数据，重试也不会有结果
+                    log_message_callback("由于SEMrush报告没有此关键词的数据，创建空记录并继续...")
+                    update_semrush_markdown(log_message_callback, page_name, [], [], {
+                        'allKeywords': '0',
+                        'totalVolume': '0',
+                        'averageKD': 'N/A',
+                        'note': 'SEMrush报告没有此关键词的相关数据'
+                    })
+                    return True
+                
+                # 只有非特殊错误类型才立即重试
+                if error_type and error_type != 'data_unavailable' and error_type != 'no_data_found':
                     retry_count += 1
+                    # 延迟短暂时间后重试
+                    time.sleep(2)
                     continue
+            else:
+                log_message_callback("等待关键词元素出现...")
+                try:
+                    # 尝试等待关键词表格行或关键词组元素出现
+                    page.wait_for_selector(".sm-table-layout__row, [role='row'], tr, .sm-group-content", 
+                                         state="visible", timeout=60000)
+                    log_message_callback("SEMrush关键词元素已出现，继续处理...")
+                except Exception as wait_error:
+                    log_message_callback(f"等待元素超时，将检查页面状态: {str(wait_error)}")
+                    
+                    # 再次检查是否是错误页面
+                    error_type = check_semrush_error_page(log_message_callback, page)
+                    if error_type:
+                        if error_type == 'login_expired' or error_type == 'redirected_to_login':
+                            log_message_callback(f"在等待元素超时后检测到SEMrush账号在其他地方登录或会话失效，立即重试...")
+                            # 截取400错误页面截图以便调试
+                            error_screenshot_path = os.path.join(screenshot_dir, f"semrush-400error-timeout-{page_name}-{retry_count}.png")
+                            try:
+                                page.screenshot(path=error_screenshot_path)
+                                log_message_callback(f"已保存400错误页面截图: {error_screenshot_path}")
+                            except Exception as ss_error:
+                                log_message_callback(f"保存截图时出错: {str(ss_error)}")
+                        elif error_type == 'data_unavailable':
+                            log_message_callback(f"在等待元素超时后检测到SEMrush数据不可用错误，这也表示没有相关数据...")
+                            # 截取数据错误页面截图以便调试
+                            error_screenshot_path = os.path.join(screenshot_dir, f"semrush-data-error-{page_name}-{retry_count}.png")
+                            try:
+                                page.screenshot(path=error_screenshot_path)
+                                log_message_callback(f"已保存数据错误页面截图: {error_screenshot_path}")
+                            except Exception as ss_error:
+                                log_message_callback(f"保存截图时出错: {str(ss_error)}")
+                            # 与no_data_found类似，直接创建空记录并继续
+                            log_message_callback("由于SEMrush报告没有此关键词的数据（数据不可用错误），创建空记录并继续...")
+                            update_semrush_markdown(log_message_callback, page_name, [], [], {
+                                'allKeywords': '0',
+                                'totalVolume': '0',
+                                'averageKD': 'N/A',
+                                'note': 'SEMrush报告没有此关键词的相关数据（数据不可用错误）'
+                            })
+                            return True
+                        elif error_type == 'no_data_found':
+                            log_message_callback(f"在等待元素超时后检测到SEMrush无数据错误页面，无法找到相关关键词数据...")
+                            # 截取无数据错误页面截图
+                            error_screenshot_path = os.path.join(screenshot_dir, f"semrush-no-data-timeout-{page_name}-{retry_count}.png")
+                            try:
+                                page.screenshot(path=error_screenshot_path)
+                                log_message_callback(f"已保存无数据错误页面截图: {error_screenshot_path}")
+                            except Exception as ss_error:
+                                log_message_callback(f"保存截图时出错: {str(ss_error)}")
+                            
+                            # 在这种情况下，我们可以选择创建一个空的数据记录并返回，而不是重试
+                            # 因为这表示该关键词确实没有数据，重试也不会有结果
+                            log_message_callback("由于SEMrush报告没有此关键词的数据，创建空记录并继续...")
+                            update_semrush_markdown(log_message_callback, page_name, [], [], {
+                                'allKeywords': '0',
+                                'totalVolume': '0',
+                                'averageKD': 'N/A',
+                                'note': 'SEMrush报告没有此关键词的相关数据'
+                            })
+                            return True
+                        else:
+                            log_message_callback(f"在等待元素超时后检测到SEMrush错误: {error_type}，将进行重试...")
+                            # 截取通用错误页面截图
+                            error_screenshot_path = os.path.join(screenshot_dir, f"semrush-general-error-timeout-{page_name}-{retry_count}.png")
+                            try:
+                                page.screenshot(path=error_screenshot_path)
+                                log_message_callback(f"已保存错误页面截图: {error_screenshot_path}")
+                            except Exception as ss_error:
+                                log_message_callback(f"保存截图时出错: {str(ss_error)}")
+                        
+                        # 只有非特殊错误类型才进行重试
+                        if not error_type or (error_type != 'data_unavailable' and error_type != 'no_data_found'):
+                            retry_count += 1
+                            # 延迟短暂时间后重试
+                            time.sleep(3)  # 超时后多等待一秒
+                            continue
+            
+            # 提取统计信息
+            log_message_callback("提取SEMrush页面统计信息...")
+            stats_data = extract_semrush_stats(log_message_callback, page)
             
             # 提取边栏数据
             log_message_callback("提取SEMrush边栏数据(最多20条)...")
@@ -73,10 +179,10 @@ def process_semrush(log_message_callback, page, page_name, screenshot_dir):
             keyword_data = extract_semrush_keyword_data(log_message_callback, page)
             
             # 检验提取的数据
-            if (keyword_data and len(keyword_data) > 0) or (sidebar_data and len(sidebar_data) > 0):
+            if (keyword_data and len(keyword_data) > 0) or (sidebar_data and len(sidebar_data) > 0) or stats_data:
                 # 整合数据并更新markdown文件
                 log_message_callback("整合SEMrush数据并更新markdown文件...")
-                update_semrush_markdown(log_message_callback, page_name, sidebar_data, keyword_data)
+                update_semrush_markdown(log_message_callback, page_name, sidebar_data, keyword_data, stats_data)
                 return True
             else:
                 log_message_callback("未找到有效的SEMrush关键词数据，将尝试重试...")
@@ -103,7 +209,7 @@ def process_semrush(log_message_callback, page, page_name, screenshot_dir):
     # 所有重试都失败
     log_message_callback(f"在 {max_retries} 次尝试后仍未能成功获取SEMrush数据")
     # 创建空数据以避免完全失败
-    update_semrush_markdown(log_message_callback, page_name, [], [])
+    update_semrush_markdown(log_message_callback, page_name, [], [], {})
     return False
 
 def login_semrush(log_message_callback, page):
@@ -162,38 +268,156 @@ def login_semrush(log_message_callback, page):
     return True
 
 def check_semrush_error_page(log_message_callback, page):
-    """检查是否是SEMrush错误页面"""
+    """检查是否是SEMrush错误页面，加强对400错误和其他错误页面的检测"""
     try:
-        # 检查常见错误页面内容
+        # 首先尝试使用提供的选择器快速检测400错误页面
+        try:
+            # 检查是否存在指定的400错误页面元素
+            error_element = page.query_selector("body > div.main > div > div:nth-child(1)")
+            if error_element:
+                error_text = error_element.inner_text()
+                if '400' in error_text:
+                    log_message_callback(f"使用选择器检测到400错误页面: {error_text[:50]}...")
+                    return 'login_expired'  # 返回错误类型而不是布尔值，以提供更多信息
+            
+            # 新增: 检测第三种错误类型 - 没有找到相关数据的错误
+            no_data_found_section = page.query_selector("section.sm-global-na, [data-testid='nothing-found-card']")
+            if no_data_found_section:
+                try:
+                    error_text = no_data_found_section.inner_text()
+                    if "couldn't find any data" in error_text or "no data" in error_text.lower():
+                        log_message_callback(f"检测到SEMrush无数据错误页面: {error_text[:50]}...")
+                        return 'no_data_found'
+                except Exception as text_error:
+                    log_message_callback(f"获取无数据错误文本时出错: {str(text_error)}")
+            
+            # 备用检测第三种错误类型的方法
+            try:
+                title_element = page.query_selector(".sm-global-na__title, [data-testid='nothing-found-title']")
+                if title_element:
+                    title_text = title_element.inner_text()
+                    if "couldn't find any data" in title_text or "no data" in title_text.lower():
+                        log_message_callback(f"通过标题检测到SEMrush无数据错误: {title_text}")
+                        return 'no_data_found'
+            except Exception as title_error:
+                log_message_callback(f"获取错误标题时出错: {str(title_error)}")
+            
+            # 新增: 检测图片错误元素
+            error_img = page.query_selector("img.kwo-global-na__img")
+            if error_img:
+                log_message_callback("检测到SEMrush错误图片 (kwo-global-na__img)，可能是服务不可用或数据加载错误")
+                return 'data_unavailable'
+            
+            # 尝试检测其他可能的错误图片或容器
+            additional_error_selectors = [
+                ".kwo-global-na", # 图片的父容器
+                ".kwo-global-na__title", # 可能存在的错误标题
+                ".kwo-global-na__text", # 可能存在的错误文本
+                ".sm-kw-error", # 其他可能的错误类
+                ".sm-error-container",
+                "[class*='error']", # 任何包含error的类名
+                "[class*='na__img']" # 任何包含na__img的类名
+            ]
+            
+            for selector in additional_error_selectors:
+                error_el = page.query_selector(selector)
+                if error_el:
+                    try:
+                        error_text = error_el.inner_text() or "无文本内容"
+                    except:
+                        error_text = "无法获取文本"
+                    
+                    log_message_callback(f"检测到SEMrush错误元素 ({selector}): {error_text[:50]}...")
+                    return 'data_unavailable'
+            
+            # 备用选择器检测400错误
+            backup_selectors = [
+                "div.error-container", 
+                ".error-code", 
+                ".error-message",
+                "div.main > div > div",  # 更通用的选择器
+                "h1.error-title"
+            ]
+            
+            for selector in backup_selectors:
+                el = page.query_selector(selector)
+                if el:
+                    text = el.inner_text()
+                    if '400' in text or '错误' in text or 'Error' in text or '登录已失效' in text:
+                        log_message_callback(f"使用备用选择器 '{selector}' 检测到错误页面: {text[:50]}...")
+                        return 'login_expired'
+        except Exception as selector_error:
+            log_message_callback(f"使用选择器检测错误时出现异常: {str(selector_error)}")
+        
+        # 使用更全面的JavaScript评估来检查页面内容
         error_content = page.evaluate("""
             () => {
-                // 检查"Something went wrong"错误
-                if (document.body.innerText.includes('Something went wrong') || 
-                    document.body.innerText.includes('went wrong')) {
-                    return 'something_went_wrong';
+                // 检查页面URL，某些错误会反映在URL中
+                if (window.location.href.includes('error') || 
+                    window.location.href.includes('400') || 
+                    window.location.href.includes('401') || 
+                    window.location.href.includes('403')) {
+                    return 'error_in_url';
                 }
                 
-                // 检查400错误页面
-                if (document.body.innerText.includes('400') && 
-                    (document.body.innerText.includes('登录已失效') || 
-                     document.body.innerText.includes('失效'))) {
+                // 检查页面标题
+                if (document.title.includes('Error') || 
+                    document.title.includes('错误') || 
+                    document.title.includes('400')) {
+                    return 'error_in_title';
+                }
+                
+                // 检查整个页面文本
+                const fullText = document.body.innerText;
+                
+                // 检查400错误页面 - 最优先检查
+                if (fullText.includes('400') && 
+                    (fullText.includes('登录已失效') || 
+                     fullText.includes('失效') ||
+                     fullText.includes('已在其他地方登录') ||
+                     fullText.includes('请重新登录'))) {
                     return 'login_expired';
                 }
                 
+                // 检查"Something went wrong"错误
+                if (fullText.includes('Something went wrong') || 
+                    fullText.includes('went wrong') ||
+                    fullText.includes('出错了')) {
+                    return 'something_went_wrong';
+                }
+                
                 // 检查401/403错误
-                if (document.body.innerText.includes('401') || 
-                    document.body.innerText.includes('403') || 
-                    document.body.innerText.includes('Unauthorized') ||
-                    document.body.innerText.includes('Forbidden')) {
+                if (fullText.includes('401') || 
+                    fullText.includes('403') || 
+                    fullText.includes('Unauthorized') ||
+                    fullText.includes('Forbidden') ||
+                    fullText.includes('未授权')) {
                     return 'unauthorized';
                 }
                 
+                // 检查登录页面（可能是被重定向了）
+                if (fullText.includes('登录') && 
+                    fullText.includes('密码') && 
+                    (fullText.includes('Sign in') || fullText.includes('Log in'))) {
+                    return 'redirected_to_login';
+                }
+                
                 // 检查其他一般错误消息
-                if (document.body.innerText.includes('error') || 
-                    document.body.innerText.includes('Error') ||
-                    document.body.innerText.includes('失败') ||
-                    document.body.innerText.includes('错误')) {
+                if (fullText.includes('error') || 
+                    fullText.includes('Error') ||
+                    fullText.includes('失败') ||
+                    fullText.includes('错误')) {
                     return 'general_error';
+                }
+                
+                // 检查是否有特定的错误元素
+                const errorElements = document.querySelectorAll('.error, .error-message, .error-container, [class*=error]');
+                if (errorElements.length > 0) {
+                    for (const el of errorElements) {
+                        if (el.offsetWidth > 0 && el.offsetHeight > 0) { // 确保元素可见
+                            return 'error_element_found';
+                        }
+                    }
                 }
                 
                 return false;
@@ -202,7 +426,7 @@ def check_semrush_error_page(log_message_callback, page):
         
         if error_content:
             log_message_callback(f"检测到SEMrush错误页面: {error_content}")
-            return True
+            return error_content
         
         return False
     except Exception as e:
@@ -300,8 +524,11 @@ def extract_semrush_sidebar_data(log_message_callback, page):
         return []
 
 def extract_semrush_keyword_data(log_message_callback, page):
-    """提取SEMrush主要关键词数据，最多返回20条，并改进过滤逻辑"""
+    """提取SEMrush主要关键词数据和页面顶部统计信息"""
     try:
+        # 首先尝试提取页面顶部的统计信息
+        stats_info = extract_semrush_stats(log_message_callback, page)
+        
         # 使用更精确的JavaScript提取每一行的完整数据，确保包含第一行
         keyword_rows = page.evaluate("""
             () => {
@@ -509,7 +736,7 @@ def extract_semrush_keyword_data(log_message_callback, page):
                             }
                         }
                         
-                        // 如果通过列索引没有找到，使用表格结构的基本规律
+                        // 如果通过列索引没有找到搜索量和KD，使用表格结构的基本规律
                         if (volume === "0" && cells.length >= 2) {
                             // 搜索量通常是第2列，它是一个数值，可能带有K、M、B等单位
                             const volumeText = cells[1].textContent.trim();
@@ -701,9 +928,139 @@ def extract_semrush_keyword_data(log_message_callback, page):
         log_message_callback(f"错误详情: {e}")
         return []
 
-def update_semrush_markdown(log_message_callback, page_name, sidebar_data, keyword_data):
-    """更新markdown文件中的SEMrush数据 - 保持原来的逻辑但修复PPC问题"""
-    if not sidebar_data and not keyword_data:
+def extract_semrush_stats(log_message_callback, page):
+    """提取SEMrush页面顶部的统计信息"""
+    try:
+        # 使用JavaScript评估提取统计信息
+        stats = page.evaluate("""
+            () => {
+                // 查找可能包含统计信息的元素
+                const statsElements = [
+                    // 尝试多种选择器定位统计信息
+                    document.querySelector('.sm-keywords-table-header-animation'),
+                    document.querySelector('.sm-keywords-table-header'),
+                    document.querySelector('.sm-kw-table-header'),
+                    document.querySelector('.sm-mt-table-header'),
+                    document.querySelector('[class*="keywords-table-header"]'),
+                    // 如图片所示的元素位置
+                    document.querySelector('div[class*="table-header-animation"]')
+                ].filter(el => el);
+                
+                // 如果找到了元素
+                if (statsElements.length > 0) {
+                    const statsContainer = statsElements[0];
+                    const statsText = statsContainer.innerText;
+                    
+                    // 尝试从文本中提取统计数据
+                    const allKeywordsMatch = statsText.match(/All keywords[:\\s]*(\\d[\\d,\\.]*[KMB]?)/i) || 
+                                            statsText.match(/(\\d[\\d,\\.]*[KMB]?)\\s*keywords/i);
+                    const totalVolumeMatch = statsText.match(/Total Volume[:\\s]*(\\d[\\d,\\.]*[KMB]?)/i) || 
+                                            statsText.match(/Volume[:\\s]*(\\d[\\d,\\.]*[KMB]?)/i);
+                    const avgKDMatch = statsText.match(/Average KD[:\\s]*(\\d+%)/i) || 
+                                      statsText.match(/Avg[\\s.]*KD[:\\s]*(\\d+%)/i) ||
+                                      statsText.match(/KD[:\\s]*(\\d+%)/i);
+                    
+                    return {
+                        allKeywords: allKeywordsMatch ? allKeywordsMatch[1] : null,
+                        totalVolume: totalVolumeMatch ? totalVolumeMatch[1] : null,
+                        averageKD: avgKDMatch ? avgKDMatch[1] : null,
+                        rawText: statsText
+                    };
+                }
+                
+                // 备选方法：尝试查找具有特定内容的元素
+                const allTexts = [];
+                document.querySelectorAll('div, span, p').forEach(el => {
+                    const text = el.innerText.trim();
+                    if (text && (
+                        text.includes('keywords') || 
+                        text.includes('volume') || 
+                        text.includes('KD')
+                    )) {
+                        allTexts.push({
+                            element: el.tagName,
+                            text: text
+                        });
+                    }
+                });
+                
+                // 从收集的文本中提取统计信息
+                let allKeywords = null, totalVolume = null, averageKD = null;
+                
+                allTexts.forEach(item => {
+                    if (!allKeywords && 
+                        (item.text.match(/All keywords[:\\s]*(\\d[\\d,\\.]*[KMB]?)/i) || 
+                         item.text.match(/(\\d[\\d,\\.]*[KMB]?)\\s*keywords/i))) {
+                        const match = item.text.match(/All keywords[:\\s]*(\\d[\\d,\\.]*[KMB]?)/i) || 
+                                     item.text.match(/(\\d[\\d,\\.]*[KMB]?)\\s*keywords/i);
+                        allKeywords = match ? match[1] : null;
+                    }
+                    
+                    if (!totalVolume && 
+                        (item.text.match(/Total Volume[:\\s]*(\\d[\\d,\\.]*[KMB]?)/i) || 
+                         item.text.match(/Volume[:\\s]*(\\d[\\d,\\.]*[KMB]?)/i))) {
+                        const match = item.text.match(/Total Volume[:\\s]*(\\d[\\d,\\.]*[KMB]?)/i) || 
+                                     item.text.match(/Volume[:\\s]*(\\d[\\d,\\.]*[KMB]?)/i);
+                        totalVolume = match ? match[1] : null;
+                    }
+                    
+                    if (!averageKD && 
+                        (item.text.match(/Average KD[:\\s]*(\\d+%)/i) || 
+                         item.text.match(/Avg[\\s.]*KD[:\\s]*(\\d+%)/i) ||
+                         item.text.match(/KD[:\\s]*(\\d+%)/i))) {
+                        const match = item.text.match(/Average KD[:\\s]*(\\d+%)/i) || 
+                                     item.text.match(/Avg[\\s.]*KD[:\\s]*(\\d+%)/i) ||
+                                     item.text.match(/KD[:\\s]*(\\d+%)/i);
+                        averageKD = match ? match[1] : null;
+                    }
+                });
+                
+                if (allKeywords || totalVolume || averageKD) {
+                    return {
+                        allKeywords: allKeywords,
+                        totalVolume: totalVolume,
+                        averageKD: averageKD,
+                        rawText: allTexts.map(item => item.text).join(' | ')
+                    };
+                }
+                
+                return {
+                    allKeywords: null,
+                    totalVolume: null,
+                    averageKD: null,
+                    rawText: "未找到统计信息"
+                };
+            }
+        """)
+        
+        # 记录找到的统计信息
+        if stats:
+            log_message_callback("提取的SEMrush统计信息:")
+            if stats.get('allKeywords'):
+                log_message_callback(f"关键词总数: {stats.get('allKeywords')}")
+            if stats.get('totalVolume'):
+                log_message_callback(f"总搜索量: {stats.get('totalVolume')}")
+            if stats.get('averageKD'):
+                log_message_callback(f"平均关键词难度: {stats.get('averageKD')}")
+            
+            if not (stats.get('allKeywords') or stats.get('totalVolume') or stats.get('averageKD')):
+                log_message_callback(f"未能找到统计信息，原始文本: {stats.get('rawText', '无文本')}")
+        else:
+            log_message_callback("未能提取SEMrush统计信息")
+        
+        return stats
+        
+    except Exception as e:
+        log_message_callback(f"提取SEMrush统计信息时出错: {str(e)}")
+        return {
+            'allKeywords': None,
+            'totalVolume': None,
+            'averageKD': None
+        }
+
+def update_semrush_markdown(log_message_callback, page_name, sidebar_data, keyword_data, stats_data=None):
+    """更新markdown文件中的SEMrush数据 - 使用对齐表格格式，包含统计信息"""
+    if not sidebar_data and not keyword_data and not stats_data:
         log_message_callback("没有SEMrush数据可以更新到MD文件")
         return
         
@@ -748,16 +1105,43 @@ def update_semrush_markdown(log_message_callback, page_name, sidebar_data, keywo
         md_content += f"\n\n{semrush_header}\n"
         semrush_index = md_content.find(semrush_header)
     
-    # 构建Markdown表格 - 保持原来的逻辑
-    table_content = "\n\n| main words | main word vloume | Key words | Volume | Keyword Difficulty |\n"
-    table_content += "| --- | --- | --- | --- | --- |\n"
+    # 添加统计信息（如果存在）
+    stats_content = ""
+    if stats_data:
+        stats_content = "\n"
+        if stats_data.get('allKeywords'):
+            stats_content += f"- ALL Keywords: **{stats_data.get('allKeywords')}**\n"
+        if stats_data.get('totalVolume'):
+            stats_content += f"- Total Volume: **{stats_data.get('totalVolume')}**\n"
+        if stats_data.get('averageKD'):
+            stats_content += f"- Average KD: **{stats_data.get('averageKD')}**\n"
+        if stats_data.get('note'):
+            stats_content += f"- 说明: *{stats_data.get('note')}*\n"
+        stats_content += "\n"
     
     # 确定实际有多少行数据
     max_rows = max(len(sidebar_data), len(keyword_data))
     
+    # 定义表头
+    table_headers = ["main words", "main word vloume", "Key words", "Volume", "Keyword Difficulty"]
+    
     # 如果没有数据，至少添加一行空行
     if max_rows == 0:
-        table_content += "| | | | | |\n"
+        # 无数据时使用默认表头宽度
+        main_words_width = len(table_headers[0])
+        main_word_volume_width = len(table_headers[1])
+        key_words_width = len(table_headers[2])
+        volume_width = len(table_headers[3])
+        kd_width = len(table_headers[4])
+        
+        # 构建表头行
+        header_row = f"| {table_headers[0].ljust(main_words_width)} | {table_headers[1].ljust(main_word_volume_width)} | {table_headers[2].ljust(key_words_width)} | {table_headers[3].ljust(volume_width)} | {table_headers[4].ljust(kd_width)} |"
+        
+        # 构建分隔行
+        separator_row = f"| {':'.ljust(main_words_width, '-')} | {':'.ljust(main_word_volume_width, '-')} | {':'.ljust(key_words_width, '-')} | {':'.ljust(volume_width, '-')} | {':'.ljust(kd_width, '-')} |"
+        
+        # 添加表头、分隔行和空行
+        table_content = f"{header_row}\n{separator_row}\n| {''.ljust(main_words_width)} | {''.ljust(main_word_volume_width)} | {''.ljust(key_words_width)} | {''.ljust(volume_width)} | {''.ljust(kd_width)} |\n"
     else:
         # 填充表格数据 - 确保过滤掉PPC内容
         filtered_sidebar = [item for item in sidebar_data if not item['text'].startswith('PPC')]
@@ -765,6 +1149,32 @@ def update_semrush_markdown(log_message_callback, page_name, sidebar_data, keywo
         
         max_rows = max(len(filtered_sidebar), len(filtered_keywords))
         
+        # 判断是否有数据，根据最大数据长度调整表头宽度
+        if filtered_sidebar or filtered_keywords:
+            # 计算每列数据的最大宽度
+            main_words_width = max(len(table_headers[0]), *[len(item['text']) for item in filtered_sidebar]) if filtered_sidebar else len(table_headers[0])
+            main_word_volume_width = max(len(table_headers[1]), *[len(item['value']) for item in filtered_sidebar]) if filtered_sidebar else len(table_headers[1])
+            key_words_width = max(len(table_headers[2]), *[len(item['keyword']) for item in filtered_keywords]) if filtered_keywords else len(table_headers[2])
+            volume_width = max(len(table_headers[3]), *[len(item['volume']) for item in filtered_keywords]) if filtered_keywords else len(table_headers[3])
+            kd_width = max(len(table_headers[4]), *[len(item['kd']) for item in filtered_keywords]) if filtered_keywords else len(table_headers[4])
+        else:
+            # 无数据时使用默认表头宽度
+            main_words_width = len(table_headers[0])
+            main_word_volume_width = len(table_headers[1])
+            key_words_width = len(table_headers[2])
+            volume_width = len(table_headers[3])
+            kd_width = len(table_headers[4])
+        
+        # 构建表头行，确保每个标题宽度与数据一致
+        header_row = f"| {table_headers[0].ljust(main_words_width)} | {table_headers[1].ljust(main_word_volume_width)} | {table_headers[2].ljust(key_words_width)} | {table_headers[3].ljust(volume_width)} | {table_headers[4].ljust(kd_width)} |"
+        
+        # 构建分隔行，确保与表头宽度一致
+        separator_row = f"| {':'.ljust(main_words_width, '-')} | {':'.ljust(main_word_volume_width, '-')} | {':'.ljust(key_words_width, '-')} | {':'.ljust(volume_width, '-')} | {':'.ljust(kd_width, '-')} |"
+        
+        # 添加表头和分隔行
+        table_content = f"{header_row}\n{separator_row}\n"
+        
+        # 处理表格行数据
         for i in range(max_rows):
             main_word = filtered_sidebar[i]['text'] if i < len(filtered_sidebar) else ""
             main_word_count = filtered_sidebar[i]['value'] if i < len(filtered_sidebar) else ""
@@ -772,16 +1182,20 @@ def update_semrush_markdown(log_message_callback, page_name, sidebar_data, keywo
             volume = filtered_keywords[i]['volume'] if i < len(filtered_keywords) else ""
             kd = filtered_keywords[i]['kd'] if i < len(filtered_keywords) else ""
             
-            table_content += f"| {main_word} | {main_word_count} | {keyword} | {volume} | {kd} |\n"
+            # 填充表格行
+            table_content += f"| {main_word.ljust(main_words_width)} | {main_word_count.ljust(main_word_volume_width)} | {keyword.ljust(key_words_width)} | {volume.ljust(volume_width)} | {kd.ljust(kd_width)} |\n"
     
     # 查找下一部分的开始
     next_section_index = md_content.find("###", semrush_index + len(semrush_header))
     
-    # 插入表格内容
+    # 将统计信息和表格内容组合
+    combined_content = stats_content + table_content
+    
+    # 插入统计信息和表格内容
     if next_section_index != -1:
-        updated_content = md_content[:semrush_index + len(semrush_header)] + table_content + "\n" + md_content[next_section_index:]
+        updated_content = md_content[:semrush_index + len(semrush_header)] + combined_content + "\n" + md_content[next_section_index:]
     else:
-        updated_content = md_content[:semrush_index + len(semrush_header)] + table_content
+        updated_content = md_content[:semrush_index + len(semrush_header)] + combined_content
     
     # 保存更新后的内容
     try:

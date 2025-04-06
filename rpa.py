@@ -846,13 +846,10 @@ class RPAWorker(QThread):
         next_section_index = md_content.find("###", section_index + 1)
         
         if section_index != -1:
-            # 构建新内容
+            # 构建新内容 - 使用标准的Markdown有序列表格式
             new_content = ""
             for i, item in enumerate(items):
-                if i == 0:
-                    new_content += f"- {i+1}.{item}\n"
-                else:
-                    new_content += f"{i+1}.{item}\n"
+                new_content += f"{i+1}. {item}\n"
             
             # 插入新内容
             if next_section_index != -1:
