@@ -43,10 +43,9 @@ class RPAWorker(QThread):
     log_message = pyqtSignal(str)
     task_completed = pyqtSignal(str, bool)
     
-    def __init__(self, urls, md_template_path, settings):
+    def __init__(self, urls, settings):
         super().__init__()
         self.urls = urls
-        self.md_template_path = md_template_path
         self.settings = settings
         self.browser_instance = None
         self.abort_flag = False
@@ -807,18 +806,14 @@ class RPAWorker(QThread):
         # 创建目标MD文件名
         md_file_path = f"{page_name}.md"
         
-        # 检查文件是否存在，如果不存在则复制模板
+        # 检查文件是否存在，如果不存在则创建一个基本结构
         if not os.path.exists(md_file_path):
-            if self.md_template_path and os.path.exists(self.md_template_path):
-                self.log_message.emit(f"复制模板文件 {self.md_template_path} 到 {md_file_path}")
-                shutil.copy2(self.md_template_path, md_file_path)
-            else:
-                # 如果没有模板，创建一个基本结构
-                self.log_message.emit(f"创建新的MD文件: {md_file_path}")
-                # 获取显示名称（替换连字符为空格，首字母大写）
-                display_name = page_name.replace("-", " ").title()
-                with open(md_file_path, "w", encoding="utf-8") as file:
-                    file.write(f"""
+            # 直接创建一个基本结构，不再使用模板
+            self.log_message.emit(f"创建新的MD文件: {md_file_path}")
+            # 获取显示名称（替换连字符为空格，首字母大写）
+            display_name = page_name.replace("-", " ").title()
+            with open(md_file_path, "w", encoding="utf-8") as file:
+                file.write(f"""
 # {display_name}
 
 ## 关键词来源
@@ -1871,22 +1866,6 @@ class SeoRpaMainWindow(QMainWindow):
         self.url_group.setLayout(url_layout)
         task_layout.addWidget(self.url_group)
         
-        # MD模板选择区域
-        template_group = QGroupBox("Markdown模板")
-        template_layout = QHBoxLayout()
-        
-        self.template_path_input = QLineEdit()
-        self.template_path_input.setPlaceholderText("选择一个.md文件作为模板")
-        self.template_path_input.setReadOnly(True)
-        
-        self.select_template_button = QPushButton("选择模板")
-        
-        template_layout.addWidget(self.template_path_input, 7)
-        template_layout.addWidget(self.select_template_button, 3)
-        
-        template_group.setLayout(template_layout)
-        task_layout.addWidget(template_group)
-        
         # 任务执行控制区域
         control_group = QGroupBox("任务控制")
         control_layout = QVBoxLayout()
@@ -1937,7 +1916,6 @@ class SeoRpaMainWindow(QMainWindow):
         # 连接信号
         self.load_urls_button.clicked.connect(self.load_urls_from_file)
         self.clear_urls_button.clicked.connect(self.clear_urls)
-        self.select_template_button.clicked.connect(self.select_template)
         self.start_button.clicked.connect(self.start_task)
         self.stop_button.clicked.connect(self.stop_task)
         self.clear_log_button.clicked.connect(self.clear_log)
@@ -2084,13 +2062,6 @@ class SeoRpaMainWindow(QMainWindow):
         self.url_input.clear()
         self.log_message("已清空URL列表")
         
-    def select_template(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "选择Markdown模板", "", "Markdown文件 (*.md);;所有文件 (*)")
-        if file_path:
-            self.template_path_input.setText(file_path)
-            self.settings.setValue("md_template", file_path)
-            self.log_message(f"已选择模板文件: {file_path}")
-            
     def select_chrome_profile(self):
         dir_path = QFileDialog.getExistingDirectory(self, "选择Chrome用户数据目录")
         if dir_path:
@@ -2120,7 +2091,6 @@ class SeoRpaMainWindow(QMainWindow):
         # 加载设置
         self.chrome_profile_input.setText(self.settings.value("chrome_profile", ""))
         self.screenshot_dir_input.setText(self.settings.value("screenshot_dir", "screenshots"))
-        self.template_path_input.setText(self.settings.value("md_template", ""))
         self.headless_checkbox.setChecked(self.settings.value("headless_mode", "false") == "true")
         self.invisible_browser_checkbox.setChecked(self.settings.value("invisible_browser", "true") == "true")
         self.scrape_ga_checkbox.setChecked(self.settings.value("scrape_ga", "true") == "true")
@@ -2158,9 +2128,6 @@ class SeoRpaMainWindow(QMainWindow):
         # 分割输入内容
         items = [item.strip() for item in input_text.split("\n") if item.strip()]
         
-        # 获取模板路径
-        template_path = self.template_path_input.text()
-        
         # 更新UI状态
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
@@ -2177,7 +2144,7 @@ class SeoRpaMainWindow(QMainWindow):
         sys.stdout = self.stdout_redirect
         
         # 创建并启动工作线程
-        self.worker = RPAWorker(items, template_path, self.settings)
+        self.worker = RPAWorker(items, self.settings)
         self.worker.progress_updated.connect(self.update_progress)
         self.worker.log_message.connect(self.log_message)
         self.worker.task_completed.connect(self.on_task_completed)
