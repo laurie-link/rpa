@@ -5,21 +5,18 @@
 
 ### Google 搜索下拉框
 
-1. spotify premium教学
-2. spotify premium
-3. spotify premium gift card not working
-4. walmart spotify premium
+1. spotilife app
 
 ### 相关搜索
 
 1. spotify++
-2. Spotilife 1.8
-3. Spotify 破解版 iOS
-4. Spotify 破解版IPA
-5. Spotify iOS
-6. Spotify IPA
-7. Spotilife not working
-8. Spotify tweaked iOS
+2. Spotify 破解版 iOS
+3. Spotify 破解版IPA
+4. Spotify iOS
+5. Spotify IPA
+6. Spotilife 1.8
+7. Spotify premium free Mac
+8. Sideloadly
 
 ### GSC热门查询
 
@@ -40,7 +37,6 @@
 2. Does Spotify Premium come with Hulu?
 3. Why can't I pay for Spotify Premium on my iPhone?
 4. How do I reactivate my Spotify Premium?
-
 
 ### SEMrush
 - ALL Keywords: **0**

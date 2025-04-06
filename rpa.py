@@ -268,8 +268,8 @@ class RPAWorker(QThread):
         """启动浏览器"""
         self.log_message.emit("启动浏览器...")
         
-        # 获取用户数据目录
-        user_data_dir = self.settings.value("chrome_profile", r"C:\Users\34897\AppData\Local\Google\Chrome\User Data")
+        # 使用当前目录下的chrome_profile文件夹作为用户数据目录
+        user_data_dir = os.path.join(os.getcwd(), "chrome_profile")
         
         # 随机选择用户代理
         user_agents = [
@@ -669,7 +669,15 @@ class RPAWorker(QThread):
         # 检查是否需要登录
         if page.url.startswith("https://accounts.google.com/"):
             self.log_message.emit("检测到需要登录，开始自动登录流程...")
-            self.handle_google_login(page, "crawlyjoe98@gmail.com", "Cccy1314ss")
+            # 从设置中获取账号密码
+            google_account = self.settings.value("google_account", "")
+            google_password = self.settings.temp_password if hasattr(self.settings, "temp_password") else ""
+            
+            if not google_account or not google_password:
+                self.log_message.emit("错误: 未设置谷歌账号或密码，无法自动登录")
+                raise Exception("未设置谷歌账号或密码，请在设置中填写")
+                
+            self.handle_google_login(page, google_account, google_password)
             self.log_message.emit("登录完成，继续执行...")
         
         # 添加随机滚动
@@ -1925,20 +1933,44 @@ class SeoRpaMainWindow(QMainWindow):
         # 创建设置选项卡布局
         settings_layout = QVBoxLayout()
         
-        # Chrome配置文件路径
-        chrome_group = QGroupBox("Chrome配置")
-        chrome_layout = QHBoxLayout()
+        # 谷歌账号设置
+        google_group = QGroupBox("谷歌账号设置")
+        google_layout = QVBoxLayout()
         
-        self.chrome_profile_input = QLineEdit()
-        self.chrome_profile_input.setPlaceholderText("Chrome用户数据目录路径")
+        # 账号输入
+        account_layout = QHBoxLayout()
+        account_label = QLabel("谷歌账号:")
+        self.google_account_input = QLineEdit()
+        self.google_account_input.setPlaceholderText("输入谷歌账号邮箱")
+        account_layout.addWidget(account_label, 3)
+        account_layout.addWidget(self.google_account_input, 7)
+        google_layout.addLayout(account_layout)
         
-        self.select_chrome_profile_button = QPushButton("选择目录")
+        # 密码输入
+        password_layout = QHBoxLayout()
+        password_label = QLabel("账号密码:")
+        self.google_password_input = QLineEdit()
+        self.google_password_input.setPlaceholderText("输入谷歌账号密码")
+        self.google_password_input.setEchoMode(QLineEdit.Password)  # 设置密码模式
+        password_layout.addWidget(password_label, 3)
+        password_layout.addWidget(self.google_password_input, 7)
+        google_layout.addLayout(password_layout)
         
-        chrome_layout.addWidget(self.chrome_profile_input, 7)
-        chrome_layout.addWidget(self.select_chrome_profile_button, 3)
+        # 警告标签
+        password_warning = QLabel("注意: 密码仅临时保存在内存中，不会存储到本地文件")
+        password_warning.setStyleSheet("color: red;")
+        google_layout.addWidget(password_warning)
         
-        chrome_group.setLayout(chrome_layout)
-        settings_layout.addWidget(chrome_group)
+        # 清除配置文件按钮
+        clear_button_layout = QHBoxLayout()
+        self.clear_profile_button = QPushButton("清除浏览器配置文件")
+        self.clear_profile_button.setToolTip("清除自动生成的浏览器配置文件和Cookies，下次运行将重新登录")
+        clear_button_layout.addStretch()
+        clear_button_layout.addWidget(self.clear_profile_button)
+        google_layout.addLayout(clear_button_layout)
+        
+        google_group.setLayout(google_layout)
+        settings_layout.addWidget(google_group)
         
         # 截图目录设置
         screenshot_group = QGroupBox("截图设置")
@@ -2030,9 +2062,9 @@ class SeoRpaMainWindow(QMainWindow):
         self.settings_tab.setLayout(settings_layout)
         
         # 连接信号
-        self.select_chrome_profile_button.clicked.connect(self.select_chrome_profile)
         self.select_screenshot_dir_button.clicked.connect(self.select_screenshot_dir)
         self.save_settings_button.clicked.connect(self.save_settings)
+        self.clear_profile_button.clicked.connect(self.clear_browser_profile)
         
     def update_input_labels(self):
         """根据原创文章模式切换更新输入框标签和提示"""
@@ -2062,11 +2094,6 @@ class SeoRpaMainWindow(QMainWindow):
         self.url_input.clear()
         self.log_message("已清空URL列表")
         
-    def select_chrome_profile(self):
-        dir_path = QFileDialog.getExistingDirectory(self, "选择Chrome用户数据目录")
-        if dir_path:
-            self.chrome_profile_input.setText(dir_path)
-            
     def select_screenshot_dir(self):
         dir_path = QFileDialog.getExistingDirectory(self, "选择截图保存目录")
         if dir_path:
@@ -2074,7 +2101,12 @@ class SeoRpaMainWindow(QMainWindow):
             
     def save_settings(self):
         # 保存设置
-        self.settings.setValue("chrome_profile", self.chrome_profile_input.text())
+        self.settings.setValue("google_account", self.google_account_input.text())
+        # 密码不保存到设置文件中，只在内存中临时保存
+        if hasattr(self.settings, "temp_password"):
+            delattr(self.settings, "temp_password")  # 先删除旧密码
+        self.settings.temp_password = self.google_password_input.text()  # 临时保存在内存中
+        
         self.settings.setValue("screenshot_dir", self.screenshot_dir_input.text())
         self.settings.setValue("headless_mode", "true" if self.headless_checkbox.isChecked() else "false")
         self.settings.setValue("invisible_browser", "true" if self.invisible_browser_checkbox.isChecked() else "false")
@@ -2089,7 +2121,10 @@ class SeoRpaMainWindow(QMainWindow):
         
     def load_settings(self):
         # 加载设置
-        self.chrome_profile_input.setText(self.settings.value("chrome_profile", ""))
+        self.google_account_input.setText(self.settings.value("google_account", ""))
+        # 密码不从设置中加载，每次都需要用户重新输入
+        self.google_password_input.clear()
+        
         self.screenshot_dir_input.setText(self.settings.value("screenshot_dir", "screenshots"))
         self.headless_checkbox.setChecked(self.settings.value("headless_mode", "false") == "true")
         self.invisible_browser_checkbox.setChecked(self.settings.value("invisible_browser", "true") == "true")
@@ -2216,6 +2251,31 @@ class SeoRpaMainWindow(QMainWindow):
                 event.ignore()
                 return
         event.accept()
+
+    def clear_browser_profile(self):
+        """清除浏览器配置文件和Cookies文件"""
+        try:
+            # 提示用户确认
+            reply = QMessageBox.question(self, '确认清除', 
+                                        '确定要清除浏览器配置文件和Cookies吗？这将要求下次运行时重新登录。', 
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            
+            if reply == QMessageBox.Yes:
+                # 删除chrome_profile文件夹
+                chrome_profile_path = os.path.join(os.getcwd(), "chrome_profile")
+                if os.path.exists(chrome_profile_path):
+                    shutil.rmtree(chrome_profile_path)
+                    
+                # 删除google_cookies.json
+                cookies_path = os.path.join(os.getcwd(), "google_cookies.json")
+                if os.path.exists(cookies_path):
+                    os.remove(cookies_path)
+                
+                QMessageBox.information(self, "清除完成", "浏览器配置文件和Cookies已成功清除。")
+                self.log_message("浏览器配置文件和Cookies已清除，下次运行时将重新登录。")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"清除文件时出错: {str(e)}")
+            self.log_message(f"清除浏览器配置文件时出错: {str(e)}")
 
 # 主程序入口
 if __name__ == "__main__":
