@@ -79,9 +79,22 @@ class RPAWorker(QThread):
     def abort(self):
         self.abort_flag = True
         self.log_message.emit("正在中止任务...")
+        # 尝试关闭当前浏览器实例
+        try:
+            if self.browser_instance:
+                self.log_message.emit("正在关闭浏览器...")
+                self.browser_instance.close()
+                self.browser_instance = None
+        except Exception as e:
+            self.log_message.emit(f"关闭浏览器时出错: {str(e)}")
         
     def process_url(self, page_url):
         """处理单个URL或关键词的RPA任务"""
+        # 检查中止标志
+        if self.abort_flag:
+            self.log_message.emit("任务已被中止")
+            return
+            
         # 判断是否为原创文章模式
         if self.is_original_mode:
             # 在原创文章模式下，输入的是关键词而不是URL
@@ -98,31 +111,47 @@ class RPAWorker(QThread):
                 
             with sync_playwright() as p:
                 try:
+                    # 再次检查中止标志
+                    if self.abort_flag:
+                        self.log_message.emit("任务已被中止")
+                        return
+                        
                     # 处理Google搜索（原创文章模式下，只处理SERP和SEMrush）
-                    if self.settings.value("scrape_serp", "true") == "true":
+                    if self.settings.value("scrape_serp", "true") == "true" and not self.abort_flag:
                         self.log_message.emit(f"开始处理Google搜索数据，搜索查询: {keyword}")
                         self.process_google_search_incognito(p, keyword, page_name, screenshot_dir)
                     else:
-                        self.log_message.emit("已跳过SERP数据抓取（根据设置）")
+                        self.log_message.emit("已跳过SERP数据抓取（根据设置或任务已中止）")
                     
+                    # 检查中止标志
+                    if self.abort_flag:
+                        self.log_message.emit("任务已被中止")
+                        return
+                        
                     # 处理SEMrush
-                    if self.settings.value("scrape_semrush", "true") == "true":
+                    if self.settings.value("scrape_semrush", "true") == "true" and not self.abort_flag:
                         self.log_message.emit(f"开始处理SEMrush关键词数据")
                         # 创建一个新的浏览器和页面
                         browser = self.launch_browser(p)
+                        self.browser_instance = browser
                         page = browser.new_page()
                         self.setup_page(page)
                         semrush_module.process_semrush(self.log_message.emit, page, page_name, screenshot_dir)
                         # 关闭浏览器
                         browser.close()
                     else:
-                        self.log_message.emit("已跳过SEMrush数据抓取（根据设置）")
+                        self.log_message.emit("已跳过SEMrush数据抓取（根据设置或任务已中止）")
                     
+                    # 检查中止标志
+                    if self.abort_flag:
+                        self.log_message.emit("任务已被中止")
+                        return
+                        
                     # 处理GA
-                    if self.settings.value("scrape_ga", "true") == "true":
+                    if self.settings.value("scrape_ga", "true") == "true" and not self.abort_flag:
                         self.process_ga(page, ga_url, page_name, ga_screenshot_path, screenshot_dir)
                     else:
-                        self.log_message.emit("已跳过GA数据抓取（根据设置）")
+                        self.log_message.emit("已跳过GA数据抓取（根据设置或任务已中止）")
                     
                     # 关闭带配置的浏览器
                     browser.close()
@@ -166,41 +195,70 @@ class RPAWorker(QThread):
             
             with sync_playwright() as p:
                 try:
+                    # 检查中止标志
+                    if self.abort_flag:
+                        self.log_message.emit("任务已被中止")
+                        return
+                        
                     # 启动浏览器（使用用户配置文件，用于GSC和GA访问，因为需要登录状态）
                     browser = self.launch_browser(p)
+                    self.browser_instance = browser
                     
                     # 创建新页面
                     page = browser.new_page()
                     self.setup_page(page)
                     
+                    # 检查中止标志
+                    if self.abort_flag:
+                        self.log_message.emit("任务已被中止")
+                        browser.close()
+                        return
+                    
                     # 处理GSC
-                    if self.settings.value("scrape_gsc", "true") == "true":
+                    if self.settings.value("scrape_gsc", "true") == "true" and not self.abort_flag:
                         self.process_gsc(page, gsc_url, page_name, first_screenshot_path, second_screenshot_path, screenshot_dir)
                     else:
-                        self.log_message.emit("已跳过GSC数据抓取（根据设置）")
+                        self.log_message.emit("已跳过GSC数据抓取（根据设置或任务已中止）")
+                    
+                    # 检查中止标志
+                    if self.abort_flag:
+                        self.log_message.emit("任务已被中止")
+                        browser.close()
+                        return
                     
                     # 处理GA
-                    if self.settings.value("scrape_ga", "true") == "true":
+                    if self.settings.value("scrape_ga", "true") == "true" and not self.abort_flag:
                         self.process_ga(page, ga_url, page_name, ga_screenshot_path, screenshot_dir)
                     else:
-                        self.log_message.emit("已跳过GA数据抓取（根据设置）")
+                        self.log_message.emit("已跳过GA数据抓取（根据设置或任务已中止）")
                     
                     # 关闭带配置的浏览器
                     browser.close()
                     
+                    # 检查中止标志
+                    if self.abort_flag:
+                        self.log_message.emit("任务已被中止")
+                        return
+                    
                     # 处理Google搜索（无痕模式）
-                    if self.settings.value("scrape_serp", "true") == "true":
+                    if self.settings.value("scrape_serp", "true") == "true" and not self.abort_flag:
                         search_query = page_name.replace("-", " ")
                         self.log_message.emit(f"开始处理Google搜索数据，搜索查询: {search_query}")
                         self.process_google_search_incognito(p, search_query, page_name, screenshot_dir)
                     else:
-                        self.log_message.emit("已跳过SERP数据抓取（根据设置）")
+                        self.log_message.emit("已跳过SERP数据抓取（根据设置或任务已中止）")
+                    
+                    # 检查中止标志
+                    if self.abort_flag:
+                        self.log_message.emit("任务已被中止")
+                        return
                     
                     # 处理SEMrush
-                    if self.settings.value("scrape_semrush", "true") == "true":
+                    if self.settings.value("scrape_semrush", "true") == "true" and not self.abort_flag:
                         self.log_message.emit(f"开始处理SEMrush关键词数据")
                         # 创建一个新的浏览器和页面
                         browser = self.launch_browser(p)
+                        self.browser_instance = browser
                         page = browser.new_page()
                         self.setup_page(page)
                         # 处理SEMrush
@@ -208,10 +266,9 @@ class RPAWorker(QThread):
                         # 关闭浏览器
                         browser.close()
                     else:
-                        self.log_message.emit("已跳过SEMrush数据抓取（根据设置）")
+                        self.log_message.emit("已跳过SEMrush数据抓取（根据设置或任务已中止）")
                 except Exception as e:
                     self.log_message.emit(f"执行RPA时出错: {str(e)}")
-                    # 确保浏览器关闭
                     try:
                         if self.browser_instance:
                             self.browser_instance.close()
@@ -1096,6 +1153,11 @@ class RPAWorker(QThread):
                 
     def process_google_search_incognito(self, playwright, search_query, page_name, screenshot_dir):
         """在无痕模式下处理Google搜索下拉框、PAA和相关搜索"""
+        # 检查中止标志
+        if self.abort_flag:
+            self.log_message.emit("任务已被中止")
+            return
+            
         # 使用无痕模式启动新的浏览器实例
         self.log_message.emit("以无痕模式启动浏览器进行Google搜索...")
         
@@ -1181,6 +1243,12 @@ class RPAWorker(QThread):
             )
         
         try:
+            # 检查中止标志
+            if self.abort_flag:
+                self.log_message.emit("任务已被中止")
+                browser_context.close()
+                return
+                
             # 创建一个新的上下文（相当于一个新的无痕窗口）
             context = browser_context.new_context(
                 viewport={'width': 1920, 'height': 1080},
@@ -1196,6 +1264,9 @@ class RPAWorker(QThread):
             
             # 创建新页面
             page = context.new_page()
+            
+            # 保存浏览器实例以便在中止时关闭
+            self.browser_instance = browser_context
             
             # 如果使用隐形模式，确保窗口在屏幕外
             if invisible_browser:
@@ -1320,23 +1391,39 @@ class RPAWorker(QThread):
                 self.log_message.emit("等待搜索框加载...")
                 page.wait_for_selector(search_selector, state="visible", timeout=30000)
                 
+                # 检查中止标志
+                if self.abort_flag:
+                    self.log_message.emit("任务已被中止")
+                    return
+                    
                 # 输入搜索词
                 self.log_message.emit(f"输入搜索词: {search_query}")
                 page.fill(search_selector, search_query)
                 
+                # 检查中止标志
+                if self.abort_flag:
+                    self.log_message.emit("任务已被中止")
+                    return
+                    
                 # 等待搜索下拉框加载
                 self.log_message.emit("等待搜索下拉框加载...")
                 time.sleep(3)  # 给下拉框更多时间加载
                 
                 # 获取搜索下拉框内容
-                dropdown_suggestions = self.extract_dropdown_suggestions(page)
-                if dropdown_suggestions:
-                    self.log_message.emit(f"提取到 {len(dropdown_suggestions)} 个搜索下拉框建议")
-                    for i, suggestion in enumerate(dropdown_suggestions):
-                        self.log_message.emit(f"建议 {i+1}: {suggestion}")
-                    self.update_markdown_file(page_name, dropdown_suggestions, "Google 搜索下拉框")
-                else:
-                    self.log_message.emit("未能提取到搜索下拉框建议")
+                if not self.abort_flag:
+                    dropdown_suggestions = self.extract_dropdown_suggestions(page)
+                    if dropdown_suggestions:
+                        self.log_message.emit(f"提取到 {len(dropdown_suggestions)} 个搜索下拉框建议")
+                        for i, suggestion in enumerate(dropdown_suggestions):
+                            self.log_message.emit(f"建议 {i+1}: {suggestion}")
+                        self.update_markdown_file(page_name, dropdown_suggestions, "Google 搜索下拉框")
+                    else:
+                        self.log_message.emit("未能提取到搜索下拉框建议")
+                
+                # 检查中止标志
+                if self.abort_flag:
+                    self.log_message.emit("任务已被中止")
+                    return
                     
                 # 提交搜索
                 self.log_message.emit("提交搜索...")
@@ -1344,41 +1431,71 @@ class RPAWorker(QThread):
                 page.wait_for_load_state("networkidle", timeout=30000)
                 self.log_message.emit("搜索结果页面已加载")
                 
+                # 检查中止标志
+                if self.abort_flag:
+                    self.log_message.emit("任务已被中止")
+                    return
+                    
                 # 提取PAA问题
-                self.log_message.emit("开始提取PAA问题...")
-                paa_questions = self.extract_paa_questions(page)
-                if paa_questions:
-                    self.log_message.emit(f"提取到 {len(paa_questions)} 个PAA问题")
-                    for i, question in enumerate(paa_questions):
-                        self.log_message.emit(f"问题 {i+1}: {question}")
-                    self.update_markdown_file(page_name, paa_questions, "相关问题")
-                else:
-                    self.log_message.emit("未能提取到PAA问题")
+                if not self.abort_flag:
+                    self.log_message.emit("开始提取PAA问题...")
+                    paa_questions = self.extract_paa_questions(page)
+                    if paa_questions:
+                        self.log_message.emit(f"提取到 {len(paa_questions)} 个PAA问题")
+                        for i, question in enumerate(paa_questions):
+                            self.log_message.emit(f"问题 {i+1}: {question}")
+                        self.update_markdown_file(page_name, paa_questions, "相关问题")
+                    else:
+                        self.log_message.emit("未能提取到PAA问题")
+                
+                # 检查中止标志
+                if self.abort_flag:
+                    self.log_message.emit("任务已被中止")
+                    return
                 
                 # 提取相关搜索前更充分地滚动页面
                 self.log_message.emit("滚动到页面底部以加载相关搜索...")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 time.sleep(2)  # 给页面更多时间加载底部内容
                 
+                # 检查中止标志
+                if self.abort_flag:
+                    self.log_message.emit("任务已被中止")
+                    return
+                
                 # 提取相关搜索
-                self.log_message.emit("开始提取相关搜索...")
-                related_searches = self.extract_related_searches(page)
-                if related_searches:
-                    self.log_message.emit(f"提取到 {len(related_searches)} 个相关搜索")
-                    for i, search in enumerate(related_searches):
-                        self.log_message.emit(f"相关搜索 {i+1}: {search}")
-                    self.update_markdown_file(page_name, related_searches, "相关搜索")
-                else:
-                    self.log_message.emit("未能提取到相关搜索")
+                if not self.abort_flag:
+                    self.log_message.emit("开始提取相关搜索...")
+                    related_searches = self.extract_related_searches(page)
+                    if related_searches:
+                        self.log_message.emit(f"提取到 {len(related_searches)} 个相关搜索")
+                        for i, search in enumerate(related_searches):
+                            self.log_message.emit(f"相关搜索 {i+1}: {search}")
+                        self.update_markdown_file(page_name, related_searches, "相关搜索")
+                    else:
+                        self.log_message.emit("未能提取到相关搜索")
             
             except Exception as google_error:
                 self.log_message.emit(f"无痕模式Google搜索过程中发生错误: {str(google_error)}")
                 self.log_message.emit(f"错误详情: {google_error}")
             
             finally:
-                # 关闭页面和上下文
-                page.close()
-                context.close()
+                try:
+                    # 关闭页面和上下文
+                    if 'page' in locals() and page:
+                        page.close()
+                    if 'context' in locals() and context:
+                        context.close()
+                except Exception as e:
+                    self.log_message.emit(f"关闭页面时出错: {str(e)}")
+                    
+                try:
+                    # 关闭浏览器
+                    if browser_context:
+                        browser_context.close()
+                        self.browser_instance = None
+                except Exception as e:
+                    self.log_message.emit(f"关闭浏览器时出错: {str(e)}")
         
         finally:
             # 关闭浏览器
@@ -1386,6 +1503,11 @@ class RPAWorker(QThread):
             
     def extract_dropdown_suggestions(self, page):
         """提取Google搜索下拉框建议"""
+        # 检查中止标志
+        if self.abort_flag:
+            self.log_message.emit("任务已被中止")
+            return []
+            
         try:
             # 等待下拉框出现 - 使用一个通用的选择器确保下拉框已加载
             dropdown_container_selector = "div[jsname='aajZCb']"
@@ -1489,7 +1611,12 @@ class RPAWorker(QThread):
             return []
     
     def extract_paa_questions(self, page):
-        """提取PAA（People Also Ask）问题"""
+        """提取PAA(People Also Ask)问题"""
+        # 检查中止标志
+        if self.abort_flag:
+            self.log_message.emit("任务已被中止")
+            return []
+            
         try:
             # 确保页面有足够时间加载PAA部分
             time.sleep(1)
@@ -1611,6 +1738,11 @@ class RPAWorker(QThread):
     
     def extract_related_searches(self, page):
         """提取相关搜索"""
+        # 检查中止标志
+        if self.abort_flag:
+            self.log_message.emit("任务已被中止")
+            return []
+            
         try:
             # 相关搜索部分通常位于页面底部
             # 先滚动到页面底部
